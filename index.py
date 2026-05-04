@@ -206,9 +206,9 @@ HTML_TEMPLATE = '''
         <!-- Header -->
         <header class="text-center space-y-2">
             <h1 class="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                GradeMaster Elite
+                Score report generator
             </h1>
-            <p class="text-slate-400 text-sm font-medium">智慧解析 · 漸層美學 · 報表自動化</p>
+            <p class="text-slate-400 text-sm font-medium"></p>
         </header>
 
         <!-- 設定區域 -->
@@ -221,19 +221,19 @@ HTML_TEMPLATE = '''
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="space-y-1">
-                        <label class="text-[10px] text-slate-500 font-bold">A++ 門檻</label>
+                        <label class="text-[10px] text-slate-500 font-bold">A++</label>
                         <input type="number" step="0.1" name="th_app" value="93.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-[10px] text-slate-500 font-bold">A+ 門檻</label>
+                        <label class="text-[10px] text-slate-500 font-bold">A+</label>
                         <input type="number" step="0.1" name="th_ap" value="85.7" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-[10px] text-slate-500 font-bold">A 門檻</label>
+                        <label class="text-[10px] text-slate-500 font-bold">A</label>
                         <input type="number" step="0.1" name="th_a" value="76.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-[10px] text-slate-500 font-bold">B++ 門檻</label>
+                        <label class="text-[10px] text-slate-500 font-bold">B++</label>
                         <input type="number" step="0.1" name="th_bpp" value="67.1" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
                 </div>
@@ -260,7 +260,7 @@ HTML_TEMPLATE = '''
 
         <!-- 數據摘要 -->
         <div class="space-y-4">
-            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">📊 即時數據分析</h3>
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1"></h3>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="stat-card rounded-2xl p-6 text-center">
                     <p class="text-[10px] text-indigo-400 font-bold uppercase">A++</p>
