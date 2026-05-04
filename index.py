@@ -8,7 +8,7 @@ from openpyxl.utils import get_column_letter
 app = Flask(__name__)
 
 # ════════════════════════════════
-# 原始 Excel 核心邏輯 (功能保留)
+# 原始 Excel 核心邏輯 (功能 100% 保留)
 # ════════════════════════════════
 FONT_NAME = "新細明體"
 FILLS = {
@@ -127,9 +127,9 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
         for c in range(TITLE_C1, TITLE_C2 + 1):
             ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
 
-    # 關鍵修正：人數方格與標題方格間隔三格 (TITLE_R2=7, 7+1+3 = 11)
+    # 人數方格與標題方格間隔三格保留 (TITLE_R2=7, +4 = 第11行開始)
     visible = [(g, counts[g]) for g in ["A++", "A+", "A", "B++"] if counts[g] > 0]
-    GRADE_R1 = TITLE_R2 + 4 # 這裡設為 +4，會在第 8, 9, 10 行留空，從第 11 行開始寫
+    GRADE_R1 = TITLE_R2 + 4 
     
     for i, (g, cnt) in enumerate(visible):
         row = GRADE_R1 + i
@@ -147,81 +147,133 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
     return buf
 
 # ════════════════════════════════
-# 網頁 UI 設計 (Tailwind CSS 美化)
+# 網頁 UI 設計 (深淺模式 + 漸層)
 # ════════════════════════════════
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>成績報表產生器</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #0f172a; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        body { font-family: 'Noto Sans TC', sans-serif; transition: background-color 0.4s ease; }
+        .glass-card {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: all 0.4s ease;
+        }
+        /* 自訂漸層背景 */
+        .bg-gradient-light { background: radial-gradient(circle at top left, #f3f4f6, #e0e7ff); }
+        .bg-gradient-dark { background: radial-gradient(circle at top right, #0f172a, #1e1b4b); }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-6 text-slate-200">
-    <div class="glass max-w-lg w-full p-8 rounded-3xl shadow-2xl">
-        <div class="text-center mb-8">
-            <div class="inline-block p-4 rounded-2xl bg-blue-500/20 mb-4 shadow-inner">
+<body class="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 transition-colors duration-500">
+    
+    <!-- 深淺模式切換按鈕 -->
+    <button id="theme-toggle" class="absolute top-6 right-6 p-3 rounded-full bg-white/50 dark:bg-slate-800/50 shadow-lg hover:scale-110 transition-all text-slate-800 dark:text-yellow-400 backdrop-blur-md border border-slate-200 dark:border-slate-700">
+        <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+        <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+    </button>
+
+    <div class="glass-card max-w-lg w-full p-8 rounded-3xl shadow-2xl bg-white/70 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 relative overflow-hidden">
+        <!-- 裝飾用漸層光暈 -->
+        <div class="absolute -top-20 -left-20 w-40 h-40 bg-blue-400/30 dark:bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-20 -right-20 w-40 h-40 bg-purple-400/30 dark:bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="text-center mb-8 relative z-10">
+            <div class="inline-block p-4 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/40 dark:to-indigo-900/40 mb-4 shadow-inner">
                 <span class="text-4xl">📊</span>
             </div>
-            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">成績報表產生器</h1>
-            <p class="text-slate-400 mt-2 text-sm">上傳 Excel，自動完成排名與報表製作</p>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">成績報表產生器</h1>
+            <p class="text-slate-500 dark:text-slate-400 mt-2 text-sm">自動計算排名，輸出專屬 Excel</p>
         </div>
 
-        <form action="/generate" method="post" enctype="multipart/form-data" class="space-y-6">
+        <form action="/generate" method="post" enctype="multipart/form-data" class="space-y-6 relative z-10">
             <div>
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">考試名稱</label>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">考試名稱</label>
                 <input type="text" name="exam_name" placeholder="例如：國三 金安 模擬考" required
-                    class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                    class="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm">
             </div>
 
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-2">A++ 門檻</label>
-                    <input type="number" step="0.1" name="th_app" value="93.2" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">A++ 門檻</label>
+                    <input type="number" step="0.1" name="th_app" value="93.2" class="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-2">A+ 門檻</label>
-                    <input type="number" step="0.1" name="th_ap" value="85.7" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">A+ 門檻</label>
+                    <input type="number" step="0.1" name="th_ap" value="85.7" class="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-2">A 門檻</label>
-                    <input type="number" step="0.1" name="th_a" value="76.2" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">A 門檻</label>
+                    <input type="number" step="0.1" name="th_a" value="76.2" class="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-2">B++ 門檻</label>
-                    <input type="number" step="0.1" name="th_bpp" value="67.1" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">B++ 門檻</label>
+                    <input type="number" step="0.1" name="th_bpp" value="67.1" class="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all">
                 </div>
             </div>
 
             <div class="relative group">
-                <label class="block text-xs font-bold text-slate-500 mb-2">上傳資料檔案 (XLSX)</label>
+                <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-2">上傳資料檔案 (XLSX)</label>
                 <div class="flex items-center justify-center w-full">
-                    <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-2xl cursor-pointer bg-slate-900/30 hover:bg-slate-800/50 transition-all group-hover:border-blue-500/50">
+                    <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-2xl cursor-pointer bg-slate-50/50 dark:bg-slate-900/30 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all group-hover:border-blue-500">
                         <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                            <svg class="w-8 h-8 mb-3 text-slate-500 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                            <p class="text-sm text-slate-500 group-hover:text-slate-300">點擊選取或拖曳檔案</p>
+                            <svg class="w-8 h-8 mb-3 text-slate-400 dark:text-slate-500 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200">點擊選取或拖曳檔案</p>
                         </div>
                         <input type="file" name="file" accept=".xlsx" class="hidden" required />
                     </label>
                 </div>
             </div>
 
-            <button type="submit" class="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/30 transform transition active:scale-[0.98]">
+            <button type="submit" class="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/30 dark:shadow-blue-900/40 transform transition hover:-translate-y-0.5 active:scale-[0.98]">
                 🚀 產生並下載 Excel 報表
             </button>
         </form>
-
-        <div class="mt-8 pt-6 border-t border-slate-800 text-center">
-            <p class="text-xs text-slate-500 tracking-widest uppercase font-medium">Vercel Serverless Ready</p>
-        </div>
     </div>
+
+    <!-- 深淺模式 JS 邏輯 -->
+    <script>
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const darkIcon = document.getElementById('theme-toggle-dark-icon');
+        const lightIcon = document.getElementById('theme-toggle-light-icon');
+        
+        // 初始狀態檢查
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            document.body.classList.add('bg-gradient-dark');
+            lightIcon.classList.remove('hidden');
+        } else {
+            document.documentElement.classList.remove('dark');
+            document.body.classList.add('bg-gradient-light');
+            darkIcon.classList.remove('hidden');
+        }
+
+        themeToggleBtn.addEventListener('click', function() {
+            darkIcon.classList.toggle('hidden');
+            lightIcon.classList.toggle('hidden');
+
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                document.body.classList.replace('bg-gradient-dark', 'bg-gradient-light');
+                localStorage.setItem('color-theme', 'light');
+            } else {
+                document.documentElement.classList.add('dark');
+                document.body.classList.replace('bg-gradient-light', 'bg-gradient-dark');
+                localStorage.setItem('color-theme', 'dark');
+            }
+        });
+    </script>
 </body>
 </html>
 '''
