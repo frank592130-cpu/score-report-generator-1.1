@@ -8,7 +8,7 @@ from openpyxl.utils import get_column_letter
 app = Flask(__name__)
 
 # ════════════════════════════════
-# 原始 Excel 樣式與功能邏輯 (完全保留)
+# 原始 Excel 核心邏輯 (功能保留)
 # ════════════════════════════════
 FONT_NAME = "新細明體"
 FILLS = {
@@ -21,7 +21,6 @@ FILLS = {
 
 def _med(): return Side(style="medium", color="000000")
 def _thn(): return Side(style="thin",   color="000000")
-
 def all_thin():
     s = _thn()
     return Border(left=s, right=s, top=s, bottom=s)
@@ -62,10 +61,9 @@ def read_students(file_stream):
 def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
     sorted_s = sorted(students, key=lambda x: -x[3])
     n = len(sorted_s)
-
-    avg_sel    = round(sum(s  for _, s,  _, _ in sorted_s) / n, 2)
+    avg_sel = round(sum(s for _, s, _, _ in sorted_s) / n, 2)
     avg_nonsel = round(sum(ns for _, _, ns, _ in sorted_s) / n, 2)
-    avg_total  = round(sum(t  for _, _, _,  t in sorted_s) / n, 2)
+    avg_total = round(sum(t for _, _, _, t in sorted_s) / n, 2)
     
     counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
     for _, _, _, t in sorted_s:
@@ -73,8 +71,7 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
         if g in counts: counts[g] += 1
 
     rows_per_block = math.ceil((n + 1) / 3)
-    HEADER_ROW = 1
-    DATA_START = 2
+    HEADER_ROW, DATA_START = 1, 2
     FINAL_ROW = DATA_START + rows_per_block - 1
 
     wb = openpyxl.Workbook()
@@ -83,15 +80,11 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
 
     for b in range(3):
         base = b * 4 + 1
-        ws.column_dimensions[get_column_letter(base)].width   = 9
-        ws.column_dimensions[get_column_letter(base+1)].width = 7.5
-        ws.column_dimensions[get_column_letter(base+2)].width = 7.5
-        ws.column_dimensions[get_column_letter(base+3)].width = 7.5
+        for offset, w in enumerate([9, 7.5, 7.5, 7.5]):
+            ws.column_dimensions[get_column_letter(base + offset)].width = w
     
     ws.column_dimensions["M"].width = 0.4
-    ws.column_dimensions["N"].width = 7
-    ws.column_dimensions["O"].width = 7
-    ws.column_dimensions["P"].width = 7
+    for col_let in ["N", "O", "P"]: ws.column_dimensions[col_let].width = 7
 
     for b in range(3):
         base = b * 4 + 1
@@ -99,50 +92,45 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
             sc(ws, HEADER_ROW, base + i, h, border=all_thin())
 
     for idx, (name, sel, nonsel, total) in enumerate(sorted_s):
-        b = idx // rows_per_block
-        r = DATA_START + (idx % rows_per_block)
-        col = b * 4 + 1
-        g = get_grade(total, th_app, th_ap, th_a, th_bpp)
+        b, r = idx // rows_per_block, DATA_START + (idx % rows_per_block)
+        col, g = b * 4 + 1, get_grade(total, th_app, th_ap, th_a, th_bpp)
         f = FILLS[g]
-        sc(ws, r, col,     name,   fill=f, border=all_thin())
-        sc(ws, r, col + 1, sel,    fill=f, border=all_thin())
-        sc(ws, r, col + 2, nonsel, fill=f, border=all_thin())
-        sc(ws, r, col + 3, total,  fill=f, border=all_thin())
+        for i, val in enumerate([name, sel, nonsel, total]):
+            sc(ws, r, col + i, val, fill=f, border=all_thin())
 
+    # 平均值處理
     avg_pos = n
-    b_avg = avg_pos // rows_per_block
-    r_avg_start = DATA_START + (avg_pos % rows_per_block)
-    r_avg_end = FINAL_ROW
-    col_avg = b_avg * 4 + 1
-    avg_vals = ["平均", avg_sel, avg_nonsel, avg_total]
-
+    b_avg, r_avg_start = avg_pos // rows_per_block, DATA_START + (avg_pos % rows_per_block)
+    col_avg, avg_vals = b_avg * 4 + 1, ["平均", avg_sel, avg_nonsel, avg_total]
     for i, val in enumerate(avg_vals):
         curr_col = col_avg + i
-        for fill_r in range(r_avg_start, r_avg_end + 1):
+        for fill_r in range(r_avg_start, FINAL_ROW + 1):
             sc(ws, fill_r, curr_col, "", border=all_thin())
-        if r_avg_end > r_avg_start:
-            ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=r_avg_end, end_column=curr_col)
+        if FINAL_ROW > r_avg_start:
+            ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=FINAL_ROW, end_column=curr_col)
         sc(ws, r_avg_start, curr_col, val, bold=True, size=12, border=all_thin())
 
+    # 補全空格
     for b in range(3):
         base = b * 4 + 1
         for r in range(DATA_START, FINAL_ROW + 1):
             if not ws.cell(row=r, column=base).border:
-                for i in range(4):
-                    sc(ws, r, base + i, "", border=all_thin())
+                for i in range(4): sc(ws, r, base + i, "", border=all_thin())
 
+    # 標題方格
     TITLE_R1, TITLE_R2, TITLE_C1, TITLE_C2 = 2, 7, 14, 16
     ws.merge_cells(start_row=TITLE_R1, start_column=TITLE_C1, end_row=TITLE_R2, end_column=TITLE_C2)
     tc = ws.cell(row=TITLE_R1, column=TITLE_C1)
     tc.value = "\n".join(exam_lines)
-    tc.font = Font(name=FONT_NAME, bold=True, size=18)
-    tc.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    tc.font, tc.alignment = Font(name=FONT_NAME, bold=True, size=18), Alignment(horizontal="center", vertical="center", wrap_text=True)
     for r in range(TITLE_R1, TITLE_R2 + 1):
         for c in range(TITLE_C1, TITLE_C2 + 1):
             ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
 
+    # 關鍵修正：人數方格與標題方格間隔三格 (TITLE_R2=7, 7+1+3 = 11)
     visible = [(g, counts[g]) for g in ["A++", "A+", "A", "B++"] if counts[g] > 0]
-    GRADE_R1 = TITLE_R2 + 2
+    GRADE_R1 = TITLE_R2 + 4 # 這裡設為 +4，會在第 8, 9, 10 行留空，從第 11 行開始寫
+    
     for i, (g, cnt) in enumerate(visible):
         row = GRADE_R1 + i
         f = FILLS[g]
@@ -159,87 +147,104 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
     return buf
 
 # ════════════════════════════════
-# 網頁路由處理
+# 網頁 UI 設計 (Tailwind CSS 美化)
 # ════════════════════════════════
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>成績報表產生器</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; background: #0f172a; color: #f1f5f9; display: flex; justify-content: center; padding: 40px 20px; }
-        .card { background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-width: 500px; width: 100%; }
-        h2 { color: #38bdf8; margin-top: 0; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-size: 14px; margin-bottom: 5px; color: #94a3b8; }
-        input[type="text"], input[type="number"], input[type="file"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: #3b82f6; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; margin-top: 10px; }
-        button:hover { background: #2563eb; }
-        .footer { margin-top: 20px; font-size: 12px; color: #64748b; text-align: center; }
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #0f172a; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
     </style>
 </head>
-<body>
-    <div class="card">
-        <h2>📊 成績報表產生器</h2>
-        <form action="/generate" method="post" enctype="multipart/form-data">
-            <div class="form-group">
-                <label>考試名稱 (空格分三段, 如: 國三 金安 模擬考)</label>
-                <input type="text" name="exam_name" value="國三 金安 模擬考" required>
+<body class="min-h-screen flex items-center justify-center p-6 text-slate-200">
+    <div class="glass max-w-lg w-full p-8 rounded-3xl shadow-2xl">
+        <div class="text-center mb-8">
+            <div class="inline-block p-4 rounded-2xl bg-blue-500/20 mb-4 shadow-inner">
+                <span class="text-4xl">📊</span>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div class="form-group"><label>A++ 門檻</label><input type="number" step="0.1" name="th_app" value="93.2"></div>
-                <div class="form-group"><label>A+ 門檻</label><input type="number" step="0.1" name="th_ap" value="85.7"></div>
-                <div class="form-group"><label>A 門檻</label><input type="number" step="0.1" name="th_a" value="76.2"></div>
-                <div class="form-group"><label>B++ 門檻</label><input type="number" step="0.1" name="th_bpp" value="67.1"></div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">成績報表產生器</h1>
+            <p class="text-slate-400 mt-2 text-sm">上傳 Excel，自動完成排名與報表製作</p>
+        </div>
+
+        <form action="/generate" method="post" enctype="multipart/form-data" class="space-y-6">
+            <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">考試名稱</label>
+                <input type="text" name="exam_name" placeholder="例如：國三 金安 模擬考" required
+                    class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
             </div>
-            <div class="form-group">
-                <label>上傳 Excel 檔案</label>
-                <input type="file" name="file" accept=".xlsx" required>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-2">A++ 門檻</label>
+                    <input type="number" step="0.1" name="th_app" value="93.2" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-2">A+ 門檻</label>
+                    <input type="number" step="0.1" name="th_ap" value="85.7" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-2">A 門檻</label>
+                    <input type="number" step="0.1" name="th_a" value="76.2" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-2">B++ 門檻</label>
+                    <input type="number" step="0.1" name="th_bpp" value="67.1" class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
             </div>
-            <button type="submit">🚀 產生並下載 Excel</button>
+
+            <div class="relative group">
+                <label class="block text-xs font-bold text-slate-500 mb-2">上傳資料檔案 (XLSX)</label>
+                <div class="flex items-center justify-center w-full">
+                    <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-2xl cursor-pointer bg-slate-900/30 hover:bg-slate-800/50 transition-all group-hover:border-blue-500/50">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <svg class="w-8 h-8 mb-3 text-slate-500 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            <p class="text-sm text-slate-500 group-hover:text-slate-300">點擊選取或拖曳檔案</p>
+                        </div>
+                        <input type="file" name="file" accept=".xlsx" class="hidden" required />
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/30 transform transition active:scale-[0.98]">
+                🚀 產生並下載 Excel 報表
+            </button>
         </form>
-        <div class="footer">Deploy on Vercel with Python Serverless</div>
+
+        <div class="mt-8 pt-6 border-t border-slate-800 text-center">
+            <p class="text-xs text-slate-500 tracking-widest uppercase font-medium">Vercel Serverless Ready</p>
+        </div>
     </div>
 </body>
 </html>
 '''
 
 @app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
+def index(): return render_template_string(HTML_TEMPLATE)
 
 @app.route('/generate', methods=['POST'])
 def generate():
     file = request.files['file']
     if not file: return "No file", 400
-    
     exam_name = request.form.get('exam_name', '')
-    th_app = float(request.form.get('th_app', 93.2))
-    th_ap  = float(request.form.get('th_ap', 85.7))
-    th_a   = float(request.form.get('th_a', 76.2))
-    th_bpp = float(request.form.get('th_bpp', 67.1))
-
-    # 讀取學生資料
+    params = {k: float(request.form.get(k)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
+    
     students = read_students(io.BytesIO(file.read()))
-
-    # 處理標題行切割
     parts = exam_name.strip().split()
     if len(parts) >= 3: lines = [parts[0], " ".join(parts[1:-1]), parts[-1]]
     elif len(parts) == 2: lines = [parts[0], "", parts[1]]
     else: lines = ["", exam_name.strip(), ""]
 
-    # 產生報表
-    report_buf = build_report(students, lines, th_app, th_ap, th_a, th_bpp)
+    report_buf = build_report(students, lines, **params)
+    return send_file(report_buf, as_attachment=True, download_name=f"{exam_name}.xlsx", mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-    return send_file(
-        report_buf,
-        as_attachment=True,
-        download_name=f"{exam_name}.xlsx",
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+def handler(event, context): return app(event, context)
 
-# 為了 Vercel 的啟動
-if __name__ == "__main__":
-    app.run()
+if __name__ == "__main__": app.run()
