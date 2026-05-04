@@ -220,7 +220,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 
                 <div>
                     <label class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-2 block">考試名稱</label>
-                    <input type="text" name="exam_name" placeholder="例如：112學年度 第二學期 第一次段考" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    <input type="text" name="exam_name" placeholder="" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                 </div>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
