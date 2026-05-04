@@ -151,7 +151,7 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GradeMaster Elite</title>
+    <title>S R G</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
@@ -215,7 +215,7 @@ HTML_TEMPLATE = '''
         <div class="glass-card rounded-2xl p-8 space-y-6">
             <form id="main-form" action="/generate" method="post" enctype="multipart/form-data" class="space-y-6">
                 <div>
-                    <label class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-2 block">考試主題名稱</label>
+                    <label class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-2 block">考試名稱</label>
                     <input type="text" name="exam_name" value="國三 金安模擬考 第六回" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                 </div>
 
