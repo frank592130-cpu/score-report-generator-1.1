@@ -43,31 +43,35 @@ def sc(ws, row, col, value, bold=False, size=10, fill=None, border=None):
     return cell
 
 def read_students_initial(file_stream):
-    wb = openpyxl.load_workbook(file_stream, data_only=True)
-    ws = wb.active
-    students = []
-    
-    # 遍歷每一列，跳過標題（第1列）
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or len(row) < 15: continue
+    # data_only=True 會讀取公式計算後的數值，而非公式本身
+    # keep_vba=False 讀取時不處理巨集，這能增加穩定性
+    try:
+        wb = openpyxl.load_workbook(file_stream, data_only=True)
+        ws = wb.active
+        students = []
         
-        # 1. 取得姓名（在第 O 欄，索引 14）
-        name = str(row[14]).strip() if row[14] is not None else ""
-        
-        # 2. 取得選擇題分數 X（在第 H 欄「客觀題」，索引 7）
-        # 排除掉「預設標準答案」那一行
-        if name == "" or name == "預設標準答案" or name == "None":
-            continue
+        # 從第 2 列開始讀取 (跳過標題)
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or len(row) < 15: continue
             
-        try:
-            # 轉換分數，若為空則給 0
-            x_val = float(row[7]) if row[7] is not None else 0.0
-            students.append({"name": name, "x": x_val})
-        except (ValueError, TypeError):
-            # 如果分數那一格不是數字則跳過
-            continue
+            # 取得姓名 (第 O 欄，索引 14)
+            name = str(row[14]).strip() if row[14] is not None else ""
             
-    return students
+            # 過濾無效資料與標題行
+            if name in ["", "預設標準答案", "None", "None"]:
+                continue
+                
+            try:
+                # 取得選擇題分數 X (第 H 欄「客觀題」，索引 7)
+                x_val = float(row[7]) if row[7] is not None else 0.0
+                students.append({"name": name, "x": x_val})
+            except (ValueError, TypeError):
+                continue
+                
+        return students
+    except Exception as e:
+        print(f"讀取 Excel 失敗: {e}")
+        return []
 
 def build_excel(students_data, exam_lines, ths):
     students_for_render = []
@@ -259,13 +263,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- 讀卡機上傳 -->
-                    <div id="dropzone" class="group border-2 border-dashed border-slate-800 rounded-xl p-6 text-center hover:border-indigo-500 hover:bg-indigo-500/5 transition-all cursor-pointer">
-                        <input type="file" id="file-input" accept=".xlsx" class="hidden">
-                        <div id="upload-content">
-                            <div class="text-2xl mb-1 group-hover:scale-110 transition-transform">📁</div>
-                            <p class="text-xs text-slate-500" id="file-status">讀卡機 XLSX 檔案</p>
-                        </div>
+                    <!-- 找到這一段並替換 -->
+                <div id="dropzone" class="...">
+                    <input type="file" id="file-input" accept=".xlsx, .xlsm" class="hidden">
+                    <div id="upload-content">
+                        <div class="text-2xl mb-1 group-hover:scale-110 transition-transform">📁</div>
+                        <p class="text-xs text-slate-500" id="file-status">讀卡機 XLSX 或 XLSM 檔案</p>
                     </div>
+                </div>
 
                     <!-- 手動新增學生 -->
                     <div class="border border-slate-800 rounded-xl p-4 bg-slate-900/30 space-y-3">
