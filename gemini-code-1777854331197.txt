@@ -1,0 +1,5 @@
+my-report-app/
+├── api/
+│   └── index.py       # 核心邏輯 (你的程式碼 + Flask 轉接)
+├── requirements.txt   # 套件清單
+└── vercel.json        # Vercel 配置文件
