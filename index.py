@@ -206,7 +206,7 @@ HTML_TEMPLATE = '''
         <!-- Header -->
         <header class="text-center space-y-2">
             <h1 class="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Score report generator
+                SRG
             </h1>
             <p class="text-slate-400 text-sm font-medium"></p>
         </header>
@@ -253,7 +253,7 @@ HTML_TEMPLATE = '''
                 </div>
 
                 <button type="submit" class="btn-main w-full py-4 rounded-xl font-bold text-white shadow-xl">
-                    下載 Excel 格式化報表
+                    下載成績單
                 </button>
             </form>
         </div>
