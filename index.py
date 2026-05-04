@@ -8,7 +8,7 @@ from openpyxl.utils import get_column_letter
 app = Flask(__name__)
 
 # ════════════════════════════════
-# 核心 Excel 邏輯 (平均格數與間隔優化)
+# 核心 Excel 繪製邏輯
 # ════════════════════════════════
 FONT_NAME = "新細明體"
 FILLS = {
@@ -34,12 +34,12 @@ def outer_med(r, c, r1, c1, r2, c2):
     )
 
 def sc(ws, row, col, value, bold=False, size=10, fill=None, border=None):
-    c = ws.cell(row=row, column=col, value=value)
-    c.font      = Font(name=FONT_NAME, bold=bold, size=size)
-    c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    if border: c.border = border
-    if fill:   c.fill   = fill
-    return c
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.font = Font(name=FONT_NAME, bold=bold, size=size)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    if border: cell.border = border
+    if fill: cell.fill = fill
+    return cell
 
 def read_students(file_stream):
     wb = openpyxl.load_workbook(file_stream, data_only=True)
@@ -51,22 +51,18 @@ def read_students(file_stream):
         except: pass
     return students
 
-def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
+def build_excel(students, exam_lines, ths):
     sorted_s = sorted(students, key=lambda x: -x[3])
     n = len(sorted_s)
     
-    # 統計數據
-    avg_sel = round(sum(s for _, s, _, _ in sorted_s) / n, 2)
-    avg_nonsel = round(sum(ns for _, _, ns, _ in sorted_s) / n, 2)
-    avg_total = round(sum(t for _, _, _, t in sorted_s) / n, 2)
-    
+    # 計算各等級人數
     counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
-    def get_g(t):
-        if t >= th_app: return "A++"
-        if t >= th_ap:  return "A+"
-        if t >= th_a:   return "A"
-        if t >= th_bpp: return "B++"
-        return ""
+    for s in sorted_s:
+        t = s[3]
+        if t >= ths['th_app']: counts["A++"] += 1
+        elif t >= ths['th_ap']: counts["A+"] += 1
+        elif t >= ths['th_a']: counts["A"] += 1
+        elif t >= ths['th_bpp']: counts["B++"] += 1
 
     rows_per_block = math.ceil((n + 2) / 3) 
     HEADER_ROW, DATA_START = 1, 2
@@ -76,7 +72,6 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
     ws = wb.active
     ws.title = "成績報表"
 
-    # 設定欄寬
     for b in range(3):
         base = b * 4 + 1
         for offset, w in enumerate([9, 7.5, 7.5, 7.5]):
@@ -84,7 +79,6 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
     ws.column_dimensions["M"].width = 0.4
     for col_let in ["N", "O", "P"]: ws.column_dimensions[col_let].width = 7
 
-    # 填寫數據
     for b in range(3):
         base = b * 4 + 1
         for i, h in enumerate(["姓名", "選擇", "非選", "總分"]):
@@ -92,16 +86,25 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
 
     for idx, (name, sel, nonsel, total) in enumerate(sorted_s):
         b, r = idx // rows_per_block, DATA_START + (idx % rows_per_block)
-        col, g = b * 4 + 1, get_g(total)
-        if g in counts: counts[g] += 1
-        f = FILLS[g]
+        col = b * 4 + 1
+        # 取得等級顏色
+        g = ""
+        if total >= ths['th_app']: g = "A++"
+        elif total >= ths['th_ap']: g = "A+"
+        elif total >= ths['th_a']: g = "A"
+        elif total >= ths['th_bpp']: g = "B++"
+        f = FILLS.get(g)
         for i, val in enumerate([name, sel, nonsel, total]):
             sc(ws, r, col + i, val, fill=f, border=all_thin())
 
-    # 平均值邏輯 (自動延伸到底端)
+    # 平均值 (自動補全剩餘空間)
     avg_pos = n
     b_avg, r_avg_start = avg_pos // rows_per_block, DATA_START + (avg_pos % rows_per_block)
-    col_avg_base, avg_vals = b_avg * 4 + 1, ["平均", avg_sel, avg_nonsel, avg_total]
+    col_avg_base = b_avg * 4 + 1
+    avg_vals = ["平均", 
+                round(sum(s[1] for s in students)/n, 2), 
+                round(sum(s[2] for s in students)/n, 2), 
+                round(sum(s[3] for s in students)/n, 2)]
     
     for i, val in enumerate(avg_vals):
         curr_col = col_avg_base + i
@@ -111,33 +114,25 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
             ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=FINAL_ROW, end_column=curr_col)
         sc(ws, r_avg_start, curr_col, val, bold=True, border=all_thin())
 
-    # 補全格線
-    for b in range(3):
-        base = b * 4 + 1
-        for r in range(DATA_START, FINAL_ROW + 1):
-            if not ws.cell(row=r, column=base).border:
-                for i in range(4): sc(ws, r, base + i, "", border=all_thin())
-
-    # 標題方格 (間隔三格)
+    # 標題與人數方格
     TITLE_R1, TITLE_R2, TITLE_C1, TITLE_C2 = 2, 7, 14, 16
     ws.merge_cells(start_row=TITLE_R1, start_column=TITLE_C1, end_row=TITLE_R2, end_column=TITLE_C2)
     tc = ws.cell(row=TITLE_R1, column=TITLE_C1)
     tc.value = "\n".join(exam_lines)
     tc.font, tc.alignment = Font(name=FONT_NAME, bold=True, size=18), Alignment(horizontal="center", vertical="center", wrap_text=True)
+    # 畫標題外框
     for r in range(TITLE_R1, TITLE_R2 + 1):
         for c in range(TITLE_C1, TITLE_C2 + 1):
             ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
 
-    # 人數摘要
-    visible = [(g, counts[g]) for g in ["A++", "A+", "A", "B++"]]
+    visible_grades = [("A++", counts["A++"]), ("A+", counts["A+"]), ("A", counts["A"]), ("B++", counts["B++"])]
     GRADE_R1 = TITLE_R2 + 4 
-    for i, (g, cnt) in enumerate(visible):
+    for i, (g, cnt) in enumerate(visible_grades):
         row = GRADE_R1 + i
-        f = FILLS[g]
+        f = FILLS.get(g)
         for col, val in [(14, g), (15, cnt)]:
             cell = ws.cell(row=row, column=col, value=val)
-            cell.font = Font(name=FONT_NAME, bold=True, size=11)
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.font, cell.alignment = Font(name=FONT_NAME, bold=True, size=11), Alignment(horizontal="center", vertical="center")
             cell.border = outer_med(row, col, GRADE_R1, 14, GRADE_R1 + 3, 15)
             if f: cell.fill = f
 
@@ -147,7 +142,7 @@ def build_report(students, exam_lines, th_app, th_ap, th_a, th_bpp):
     return buf
 
 # ════════════════════════════════
-# 網頁 UI 設計 (完全復刻圖片樣式)
+# 進階漸層 UI
 # ════════════════════════════════
 
 HTML_TEMPLATE = '''
@@ -156,147 +151,152 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>成績報表產生器</title>
+    <title>GradeMaster Elite</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body { background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); font-family: 'Noto Sans TC', sans-serif; color: #e2e8f0; }
-        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; }
-        .input-dark { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 15px; width: 100%; color: white; outline: none; }
-        .input-dark:focus { border-color: #6366f1; }
-        .btn-gradient-purple { background: linear-gradient(90deg, #818cf8 0%, #a78bfa 100%); transition: opacity 0.2s; color: white; font-weight: bold; }
-        .btn-gradient-blue { background: linear-gradient(90deg, #60a5fa 0%, #818cf8 100%); transition: opacity 0.2s; color: white; font-weight: bold; }
-        .btn-gradient-purple:hover, .btn-gradient-blue:hover { opacity: 0.9; }
-        .step-btn { background: #1e293b; border: 1px solid #334155; padding: 4px 10px; border-radius: 4px; color: #818cf8; font-weight: bold; }
-        .step-btn:hover { background: #334155; }
-        .summary-card { padding: 20px; border-radius: 12px; text-align: center; }
-        .grade-a-pp { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.3); }
-        .grade-a-p { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); }
-        .grade-a { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); }
-        .grade-b-pp { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); }
+        :root {
+            --mesh-color-1: #1e1b4b;
+            --mesh-color-2: #312e81;
+            --mesh-color-3: #1e293b;
+            --mesh-color-4: #020617;
+        }
+        body {
+            background-color: var(--mesh-color-4);
+            background-image: 
+                radial-gradient(at 0% 0%, var(--mesh-color-1) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, var(--mesh-color-2) 0, transparent 50%), 
+                radial-gradient(at 50% 100%, var(--mesh-color-3) 0, transparent 50%);
+            min-height: 100 screen;
+            font-family: 'Inter', sans-serif;
+            color: #f8fafc;
+        }
+        .glass-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .gradient-border {
+            position: relative;
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 1rem;
+        }
+        .gradient-border::before {
+            content: ""; position: absolute; inset: -1px; border-radius: 1rem; padding: 1px;
+            background: linear-gradient(45deg, #6366f1, #a855f7, #ec4899);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none;
+        }
+        .btn-main {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-main:hover { transform: translateY(-2px); box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); }
+        .stat-card {
+            background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
     </style>
 </head>
-<body class="min-h-screen p-8 flex flex-col items-center">
-
-    <div class="max-w-4xl w-full space-y-10">
-        
+<body class="p-4 md:p-12 flex justify-center">
+    <div class="max-w-4xl w-full space-y-8">
         <!-- Header -->
-        <div class="text-center">
-            <h1 class="text-3xl font-bold flex items-center justify-center gap-3">
-                <span class="text-4xl">📊</span> 成績報表產生器
+        <header class="text-center space-y-2">
+            <h1 class="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                GradeMaster Elite
             </h1>
-            <p class="text-slate-400 mt-2 text-sm">上傳成績 Excel，自動排名並輸出格式化報表</p>
-        </div>
+            <p class="text-slate-400 text-sm font-medium">智慧解析 · 漸層美學 · 報表自動化</p>
+        </header>
 
-        <!-- 考試設定 -->
-        <div class="glass-panel p-8 relative">
-            <div class="flex items-center gap-2 mb-6 text-sm font-bold text-slate-300 uppercase tracking-widest">
-                <span>⚙️ 考試設定</span>
-            </div>
-            <form id="main-form" action="/generate" method="post" enctype="multipart/form-data" class="space-y-8">
+        <!-- 設定區域 -->
+        <div class="glass-card rounded-2xl p-8 space-y-6">
+            <form id="main-form" action="/generate" method="post" enctype="multipart/form-data" class="space-y-6">
                 <div>
-                    <label class="block text-xs text-slate-400 mb-2">考試名稱 (以空格分三段)</label>
-                    <input type="text" name="exam_name" value="國三 金安模擬考 第六回" class="input-dark">
+                    <label class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-2 block">考試主題名稱</label>
+                    <input type="text" name="exam_name" value="國三 金安模擬考 第六回" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                 </div>
 
-                <div class="grid grid-cols-4 gap-6">
-                    <!-- 門檻調整組件 -->
-                    <div class="space-y-2">
-                        <label class="text-xs text-slate-400 block text-center">A++ 門檻</label>
-                        <div class="flex items-center gap-2">
-                            <input type="number" step="0.1" name="th_app" id="th_app" value="93.2" class="input-dark text-center py-2 px-1 text-sm">
-                        </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="space-y-1">
+                        <label class="text-[10px] text-slate-500 font-bold">A++ 門檻</label>
+                        <input type="number" step="0.1" name="th_app" value="93.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
-                    <div class="space-y-2">
-                        <label class="text-xs text-slate-400 block text-center">A+ 門檻</label>
-                        <div class="flex items-center gap-2">
-                            <input type="number" step="0.1" name="th_ap" id="th_ap" value="85.7" class="input-dark text-center py-2 px-1 text-sm">
-                        </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] text-slate-500 font-bold">A+ 門檻</label>
+                        <input type="number" step="0.1" name="th_ap" value="85.7" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
-                    <div class="space-y-2">
-                        <label class="text-xs text-slate-400 block text-center">A 門檻</label>
-                        <div class="flex items-center gap-2">
-                            <input type="number" step="0.1" name="th_a" id="th_a" value="76.2" class="input-dark text-center py-2 px-1 text-sm">
-                        </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] text-slate-500 font-bold">A 門檻</label>
+                        <input type="number" step="0.1" name="th_a" value="76.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
-                    <div class="space-y-2">
-                        <label class="text-xs text-slate-400 block text-center">B++ 門檻</label>
-                        <div class="flex items-center gap-2">
-                            <input type="number" step="0.1" name="th_bpp" id="th_bpp" value="67.1" class="input-dark text-center py-2 px-1 text-sm">
-                        </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] text-slate-500 font-bold">B++ 門檻</label>
+                        <input type="number" step="0.1" name="th_bpp" value="67.1" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
                     </div>
                 </div>
 
-                <!-- 上傳檔案 -->
-                <div class="space-y-3">
-                    <label class="text-xs text-slate-400 font-bold flex items-center gap-2">📁 上傳成績檔案</label>
-                    <div id="dropzone" class="border-2 border-dashed border-slate-700 rounded-xl p-8 flex items-center gap-4 transition-all hover:border-indigo-500 cursor-pointer">
-                        <div id="file-preview" class="hidden flex items-center gap-3 bg-slate-800 p-3 rounded-lg border border-slate-600">
-                            <span class="text-2xl">📄</span>
-                            <div class="text-left">
-                                <p id="file-name" class="text-xs font-bold text-slate-200">s2.xlsx</p>
-                                <p id="file-size" class="text-[10px] text-slate-500">10.3KB</p>
-                            </div>
-                            <button type="button" class="ml-2 text-slate-500 hover:text-white">✕</button>
-                        </div>
-                        <div id="placeholder-text" class="flex items-center gap-3">
-                            <span class="text-xl text-slate-500">+</span>
-                            <span class="text-xs text-slate-500">點擊選取 Excel 檔案</span>
-                        </div>
-                        <input type="file" id="file-input" name="file" accept=".xlsx" class="hidden">
+                <!-- 上傳區 -->
+                <div id="dropzone" class="group border-2 border-dashed border-slate-800 rounded-xl p-10 text-center hover:border-indigo-500 hover:bg-indigo-500/5 transition-all cursor-pointer">
+                    <input type="file" id="file-input" name="file" accept=".xlsx" class="hidden">
+                    <div id="upload-content">
+                        <div class="text-3xl mb-2 group-hover:scale-110 transition-transform">📁</div>
+                        <p class="text-sm text-slate-500" id="file-status">點選或拖拽 XLSX 檔案至此</p>
                     </div>
                 </div>
 
-                <!-- 成功提示 (上傳後才顯示) -->
-                <div id="success-msg" class="hidden bg-emerald-900/30 border border-emerald-500/50 p-4 rounded-xl flex items-center gap-3">
-                    <span class="text-emerald-400">✅</span>
-                    <span class="text-sm text-emerald-200">成功讀取 <span id="student-count">38</span> 位學生資料</span>
+                <div id="success-bar" class="hidden bg-indigo-500/10 border border-indigo-500/20 py-3 px-4 rounded-lg flex items-center justify-between">
+                    <span class="text-xs text-indigo-300 font-medium">✨ 讀取成功：<span id="st-count">0</span> 位成員</span>
+                    <span class="text-[10px] px-2 py-0.5 bg-indigo-500/20 rounded-full text-indigo-400">READY</span>
                 </div>
 
-                <!-- 按鈕區 -->
-                <div class="space-y-4">
-                    <button type="submit" class="w-full py-4 rounded-xl btn-gradient-purple flex items-center justify-center gap-2">
-                        🚀 產生報表
-                    </button>
-                    <button id="download-btn" disabled class="w-full py-4 rounded-xl btn-gradient-blue flex items-center justify-center gap-2 opacity-50 cursor-not-allowed">
-                        ⬇️ 下載 Excel 報表
-                    </button>
-                </div>
+                <button type="submit" class="btn-main w-full py-4 rounded-xl font-bold text-white shadow-xl">
+                    下載 Excel 格式化報表
+                </button>
             </form>
         </div>
 
-        <!-- 報表摘要 -->
-        <div id="summary-section" class="space-y-6">
-            <div class="flex items-center gap-2 text-sm font-bold text-slate-300 uppercase tracking-widest">
-                <span>📊 報表摘要</span>
-            </div>
-            <div class="grid grid-cols-4 gap-6">
-                <div class="summary-card grade-a-pp">
-                    <p class="text-[10px] font-bold text-blue-400">A++</p>
-                    <p id="stat-app" class="text-3xl font-black mt-2">--</p>
+        <!-- 數據摘要 -->
+        <div class="space-y-4">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest px-1">📊 即時數據分析</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="stat-card rounded-2xl p-6 text-center">
+                    <p class="text-[10px] text-indigo-400 font-bold uppercase">A++</p>
+                    <h2 id="sum-app" class="text-3xl font-black mt-1">--</h2>
                 </div>
-                <div class="summary-card grade-a-p">
-                    <p class="text-[10px] font-bold text-emerald-400">A+</p>
-                    <p id="stat-ap" class="text-3xl font-black mt-2">--</p>
+                <div class="stat-card rounded-2xl p-6 text-center">
+                    <p class="text-[10px] text-emerald-400 font-bold uppercase">A+</p>
+                    <h2 id="sum-ap" class="text-3xl font-black mt-1">--</h2>
                 </div>
-                <div class="summary-card grade-a">
-                    <p class="text-[10px] font-bold text-amber-400">A</p>
-                    <p id="stat-a" class="text-3xl font-black mt-2">--</p>
+                <div class="stat-card rounded-2xl p-6 text-center">
+                    <p class="text-[10px] text-amber-400 font-bold uppercase">A</p>
+                    <h2 id="sum-a" class="text-3xl font-black mt-1">--</h2>
                 </div>
-                <div class="summary-card grade-b-pp">
-                    <p class="text-[10px] font-bold text-rose-400">B++</p>
-                    <p id="stat-bpp" class="text-3xl font-black mt-2">--</p>
+                <div class="stat-card rounded-2xl p-6 text-center">
+                    <p class="text-[10px] text-pink-400 font-bold uppercase">B++</p>
+                    <h2 id="sum-bpp" class="text-3xl font-black mt-1">--</h2>
                 </div>
             </div>
 
-            <!-- 底部橫向統計 -->
-            <div class="glass-panel p-4 flex items-center justify-between text-xs font-bold text-slate-400 px-8">
-                <div class="flex gap-6">
-                    <span class="flex items-center gap-2">📐 選擇平均 <span id="avg-sel" class="text-slate-200">--</span></span>
-                    <span class="flex items-center gap-2">非選平均 <span id="avg-nonsel" class="text-slate-200">--</span></span>
-                    <span class="flex items-center gap-2">總分平均 <span id="avg-total" class="text-slate-200">--</span></span>
+            <!-- 橫向數據條 -->
+            <div class="glass-card rounded-xl p-5 flex flex-wrap gap-6 justify-between items-center text-xs font-bold text-slate-400">
+                <div class="flex gap-8">
+                    <div class="flex flex-col">
+                        <span class="text-[8px] text-slate-500">選擇平均</span>
+                        <span id="sum-sel" class="text-slate-200">--</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[8px] text-slate-500">非選平均</span>
+                        <span id="sum-nonsel" class="text-slate-200">--</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[8px] text-slate-500">總分平均</span>
+                        <span id="sum-total" class="text-slate-200">--</span>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">共 <span id="total-count" class="text-indigo-400">--</span> 人</div>
+                <div class="bg-slate-950/50 px-4 py-2 rounded-lg border border-slate-800">
+                    共 <span id="sum-count" class="text-indigo-400">--</span> 位學生
+                </div>
             </div>
         </div>
     </div>
@@ -304,75 +304,88 @@ HTML_TEMPLATE = '''
     <script>
         const fileInput = document.getElementById('file-input');
         const dropzone = document.getElementById('dropzone');
-        const filePreview = document.getElementById('file-preview');
-        const placeholder = document.getElementById('placeholder-text');
-        const successMsg = document.getElementById('success-msg');
-        
-        // 點擊上傳
+
         dropzone.onclick = () => fileInput.click();
 
-        fileInput.onchange = function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                document.getElementById('file-name').innerText = file.name;
-                document.getElementById('file-size').innerText = (file.size / 1024).toFixed(1) + 'KB';
-                filePreview.classList.remove('hidden');
-                placeholder.classList.add('hidden');
-                
-                // 模擬讀取 (實際可透過 AJAX 獲取更精準數據，這裡為了示範先顯示 UI)
-                successMsg.classList.remove('hidden');
-            }
-        };
+        async function updateDashboard() {
+            const file = fileInput.files[0];
+            if (!file) return;
 
-        // 產生報表動作 (這裡簡化為直接提交表單)
-        const form = document.getElementById('main-form');
-        form.onsubmit = function() {
-            // 下載按鈕在上傳成功後啟用
-            const dlBtn = document.getElementById('download-btn');
-            dlBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            dlBtn.disabled = false;
-        };
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('th_app', document.getElementsByName('th_app')[0].value);
+            formData.append('th_ap', document.getElementsByName('th_ap')[0].value);
+            formData.append('th_a', document.getElementsByName('th_a')[0].value);
+            formData.append('th_bpp', document.getElementsByName('th_bpp')[0].value);
+
+            try {
+                const res = await fetch('/analyze', { method: 'POST', body: formData });
+                const d = await res.json();
+
+                // 數值更新
+                document.getElementById('sum-app').innerText = d.counts["A++"];
+                document.getElementById('sum-ap').innerText = d.counts["A+"];
+                document.getElementById('sum-a').innerText = d.counts["A"];
+                document.getElementById('sum-bpp').innerText = d.counts["B++"];
+                document.getElementById('sum-sel').innerText = d.avg_sel;
+                document.getElementById('sum-nonsel').innerText = d.avg_nonsel;
+                document.getElementById('sum-total').innerText = d.avg_total;
+                document.getElementById('sum-count').innerText = d.count;
+                document.getElementById('st-count').innerText = d.count;
+
+                // UI 狀態切換
+                document.getElementById('success-bar').classList.remove('hidden');
+                document.getElementById('file-status').innerText = file.name;
+                document.getElementById('file-status').classList.add('text-indigo-400', 'font-bold');
+            } catch (e) { console.error(e); }
+        }
+
+        fileInput.onchange = updateDashboard;
+        document.querySelectorAll('.th-input').forEach(i => i.onchange = updateDashboard);
     </script>
 </body>
 </html>
 '''
 
 @app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
+def index(): return render_template_string(HTML_TEMPLATE)
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    file = request.files['file']
+    ths = {k: float(request.form.get(k)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
+    students = read_students(io.BytesIO(file.read()))
+    n = len(students)
+    if n == 0: return jsonify({})
+    
+    counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
+    for s in students:
+        t = s[3]
+        if t >= ths['th_app']: counts["A++"] += 1
+        elif t >= ths['th_ap']: counts["A+"] += 1
+        elif t >= ths['th_a']: counts["A"] += 1
+        elif t >= ths['th_bpp']: counts["B++"] += 1
+        
+    return jsonify({
+        "count": n,
+        "avg_sel": round(sum(s[1] for s in students)/n, 2),
+        "avg_nonsel": round(sum(s[2] for s in students)/n, 2),
+        "avg_total": round(sum(s[3] for s in students)/n, 2),
+        "counts": counts
+    })
 
 @app.route('/generate', methods=['POST'])
 def generate():
     file = request.files['file']
-    if not file: return "No file", 400
-    
     exam_name = request.form.get('exam_name', '')
-    params = {
-        'th_app': float(request.form.get('th_app', 93.2)),
-        'th_ap':  float(request.form.get('th_ap', 85.7)),
-        'th_a':   float(request.form.get('th_a', 76.2)),
-        'th_bpp': float(request.form.get('th_bpp', 67.1))
-    }
-    
+    ths = {k: float(request.form.get(k)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
     students = read_students(io.BytesIO(file.read()))
+    
     parts = exam_name.strip().split()
-    if len(parts) >= 3:
-        lines = [parts[0], " ".join(parts[1:-1]), parts[-1]]
-    elif len(parts) == 2:
-        lines = [parts[0], "", parts[1]]
-    else:
-        lines = ["", exam_name.strip(), ""]
-
-    report_buf = build_report(students, lines, **params)
-    return send_file(
-        report_buf, 
-        as_attachment=True, 
-        download_name=f"{exam_name}.xlsx", 
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-
-def handler(event, context):
-    return app(event, context)
+    lines = [parts[0], " ".join(parts[1:-1]), parts[-1]] if len(parts) >= 3 else ["", exam_name, ""]
+    
+    buf = build_excel(students, lines, ths)
+    return send_file(buf, as_attachment=True, download_name=f"{exam_name}.xlsx")
 
 if __name__ == "__main__":
     app.run(debug=True)
