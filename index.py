@@ -199,15 +199,19 @@ HTML_TEMPLATE = '''
         }
     </style>
 </head>
-<body class="p-4 md:p-12 flex justify-center">
-    <div class="max-w-4xl w-full space-y-8">
-        <!-- Header -->
-        <header class="text-center space-y-2">
-            <h1 class="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                GradeMaster Elite
-            </h1>
-            <p class="text-slate-400 text-sm font-medium">智慧解析 · 漸層美學 · 報表自動化</p>
-        </header>
+body {
+    background-color: #020617;
+    /* 改成更柔和的漸層，且固定背景不動 */
+    background-image: 
+        radial-gradient(at 0% 0%, #1e1b4b 0, transparent 50%), 
+        radial-gradient(at 100% 0%, #312e81 0, transparent 50%),
+        radial-gradient(at 50% 100%, #0f172a 0, transparent 50%); /* 降低底部亮度 */
+    background-attachment: fixed; /* 關鍵：讓漸層固定，不會因為頁面長短而亂跑 */
+    min-height: 100vh;
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    color: #f8fafc;
+}
 
         <!-- 設定區域 -->
         <div class="glass-card rounded-2xl p-8 space-y-6">
