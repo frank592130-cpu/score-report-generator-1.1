@@ -227,7 +227,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
                 <div id="students-scores-container" class="hidden space-y-4">
                     <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-                        <h3 class="text-sm font-bold text-indigo-400">1. 登錄非選分數 (滿分 6)</h3>
+                        <h3 class="text-sm font-bold text-indigo-400">登錄非選分數 (滿分 6)</h3>
                         <span class="text-[10px] text-slate-500 italic">總分 = (X/25)*85 + (Y/6)*15</span>
                     </div>
                     <div id="students-list" class="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar"></div>
