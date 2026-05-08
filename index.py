@@ -43,7 +43,7 @@ def sc(ws, row, col, value, bold=False, size=10, fill=None, border=None):
     return cell
 
 # ---------------------------------------------------------
-# 1. 更新讀取邏輯：加入「學號」提取 (索引 4 為 E 欄)
+# 1. 更新讀取邏輯
 # ---------------------------------------------------------
 def read_students_initial(file_stream):
     try:
@@ -54,7 +54,7 @@ def read_students_initial(file_stream):
             if not row or len(row) < 15: continue
             
             name = str(row[14]).strip() if row[14] is not None else ""
-            student_id = str(row[4]).strip() if row[4] is not None else "" # E 欄：考生代號
+            student_id = str(row[4]).strip() if row[4] is not None else "" 
             
             if name in ["", "預設標準答案", "None"]: continue
                 
@@ -64,7 +64,7 @@ def read_students_initial(file_stream):
                     "id": student_id, 
                     "name": name, 
                     "x": x_val,
-                    "y": 0 # 預設手寫 0 分
+                    "y": 0 
                 })
             except (ValueError, TypeError): continue
         return students
@@ -72,49 +72,53 @@ def read_students_initial(file_stream):
         return []
 
 # ---------------------------------------------------------
-# 2. 新增路由：生成補習班專用貼上檔
+# 2. 修改：依據貼上的名單順序生成檔案
 # ---------------------------------------------------------
 @app.route('/generate_copy_list', methods=['POST'])
 def generate_copy_list():
     students_json = request.form.get('students_json', '[]')
+    # 獲取使用者貼入的 App 順序名單
+    ordered_names_raw = request.form.get('ordered_names', '')
+    
     students = json.loads(students_json)
+    # 建立一個以姓名為 Key 的字典，方便快速查詢
+    student_map = {s['name']: s for s in students}
     
-    # 計算總分並排序 (依學號從小到大)
-    # 這裡將學號轉為整數排序，避免 "10" 排在 "2" 前面的問題
-    def get_sort_key(s):
-        try: return int(s.get('id', 0))
-        except: return 999999
-        
-    sorted_list = sorted(students, key=get_sort_key)
+    # 解析名單：依換行符切割，並過濾掉空白行
+    ordered_names = [n.strip() for n in ordered_names_raw.split('\n') if n.strip()]
     
-    # 建立一個新的 Excel 檔案
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "補習班貼上專用"
     
-    # 設定標題 (方便對照，你可以只複製分數欄)
-    ws.cell(row=1, column=1, value="學號")
-    ws.cell(row=1, column=2, value="姓名")
-    ws.cell(row=1, column=3, value="總分 (表現)")
+    # 標題列
+    ws.cell(row=1, column=1, value="APP名單順序")
+    ws.cell(row=1, column=2, value="總分 (表現)")
     
-    for i, s in enumerate(sorted_list, start=2):
-        x = float(s.get('x', 0))
-        y = float(s.get('y', 0))
-        total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
+    # 依照貼入的名單順序填寫
+    for i, target_name in enumerate(ordered_names, start=2):
+        ws.cell(row=i, column=1, value=target_name)
         
-        ws.cell(row=i, column=1, value=s.get('id'))
-        ws.cell(row=i, column=2, value=s.get('name'))
-        
-        # 關鍵邏輯：若總分為 0，則留白
-        if total == 0:
-            ws.cell(row=i, column=3, value="")
+        # 尋找該學生是否有成績資料
+        if target_name in student_map:
+            s = student_map[target_name]
+            x = float(s.get('x', 0))
+            y = float(s.get('y', 0))
+            total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
+            
+            # 若總分為 0，則留白 (符合使用者需求)
+            if total == 0:
+                ws.cell(row=i, column=2, value="")
+            else:
+                ws.cell(row=i, column=2, value=round(total, 2))
         else:
-            ws.cell(row=i, column=3, value=round(total, 2))
+            # 沒在資料庫裡 (請假或無成績)，成績欄位留白
+            ws.cell(row=i, column=2, value="")
             
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name="CramSchool_Import.xlsx")
+    return send_file(buf, as_attachment=True, download_name="App_Score_Import.xlsx")
 
 def build_excel(students_data, exam_lines, ths):
     students_for_render = []
@@ -211,7 +215,7 @@ def build_excel(students_data, exam_lines, ths):
     return buf
 
 # ════════════════════════════════
-# UI 模板 (新增手動輸入功能)
+# UI 模板 (新增名單貼入框)
 # ════════════════════════════════
 
 HTML_TEMPLATE = '''<!DOCTYPE html>
@@ -272,7 +276,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     <div class="max-w-4xl w-full space-y-8">
         <header class="text-center space-y-2">
             <h1 class="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                
+                SCORE REPORT GENERATOR
             </h1>
         </header>
 
@@ -282,7 +286,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 
                 <div>
                     <label class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-2 block">考試名稱</label>
-                    <input type="text" name="exam_name" placeholder="" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    <input type="text" name="exam_name" placeholder="例如：113學年度 第一次 模擬考" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                 </div>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -305,50 +309,49 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- 讀卡機上傳 -->
-                    <!-- 找到這一段並替換 -->
-                <div id="dropzone" class="...">
-                    <input type="file" id="file-input" accept=".xlsx, .xlsm" class="hidden">
-                    <div id="upload-content">
-                        <div class="text-2xl mb-1 group-hover:scale-110 transition-transform">📁</div>
-                        <p class="text-xs text-slate-500" id="file-status">讀卡機 XLSX 或 XLSM 檔案</p>
+                    <div id="dropzone" class="border-2 border-dashed border-slate-800 rounded-xl p-8 text-center hover:border-indigo-500 transition-colors cursor-pointer group">
+                        <input type="file" id="file-input" accept=".xlsx, .xlsm" class="hidden">
+                        <div id="upload-content">
+                            <div class="text-2xl mb-1 group-hover:scale-110 transition-transform">📁</div>
+                            <p class="text-xs text-slate-500" id="file-status">讀卡機 XLSX 或 XLSM 檔案</p>
+                        </div>
                     </div>
-                </div>
 
-                    <!-- 手動新增學生 -->
                     <div class="border border-slate-800 rounded-xl p-4 bg-slate-900/30 space-y-3">
                         <p class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">手動新增名單</p>
                         <div class="flex gap-2">
                             <input type="text" id="manual-name" placeholder="姓名" class="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm outline-none focus:border-indigo-500">
-                            <input type="number" id="manual-x" placeholder="X (選擇)" class="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm text-center outline-none focus:border-indigo-500">
+                            <input type="number" id="manual-x" placeholder="選擇" class="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm text-center outline-none focus:border-indigo-500">
                             <button type="button" onclick="addManualStudent()" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded text-xs font-bold transition-colors">新增</button>
                         </div>
                     </div>
                 </div>
 
+                <div class="space-y-2">
+                    <label class="text-[10px] uppercase tracking-[0.2em] text-indigo-400 font-bold block">1. 貼入補習班 APP 名單順序 (每人一行)</label>
+                    <textarea id="ordered_names" name="ordered_names" rows="5" placeholder="請直接貼入補習班系統的名單，這將決定「貼上表」的順序..." class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all custom-scrollbar"></textarea>
+                </div>
+
                 <div id="success-bar" class="hidden bg-indigo-500/10 border border-indigo-500/20 py-3 px-4 rounded-lg flex items-center justify-between">
-                    <span class="text-xs text-indigo-300 font-medium">✨ 目前清單：<span id="st-count">0</span> 位成員</span>
+                    <span class="text-xs text-indigo-300 font-medium">✨ 目前載入：<span id="st-count">0</span> 位成員</span>
                     <span class="text-[10px] px-2 py-0.5 bg-indigo-500/20 rounded-full text-indigo-400">READY</span>
                 </div>
 
                 <div id="students-scores-container" class="hidden space-y-4">
                     <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-                        <h3 class="text-sm font-bold text-indigo-400">分數登錄區 (手寫滿分 6 分)</h3>
+                        <h3 class="text-sm font-bold text-indigo-400">2. 登錄非選分數 (滿分 6)</h3>
                         <span class="text-[10px] text-slate-500">總分 = (X/25)*85 + (Y/6)*15</span>
                     </div>
                     <div id="students-list" class="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-                        <!-- 學生項目將在此產生 -->
-                    </div>
+                        </div>
                 </div>
 
-                <!-- 按鈕區塊：左邊是原本的報表，右邊是補習班專用 -->
                 <div class="flex flex-col md:flex-row gap-4">
                     <button type="submit" id="submit-btn" class="btn-main flex-[2] py-4 rounded-xl font-bold text-white shadow-xl opacity-50 cursor-not-allowed" disabled>
-                        下載成績報表 (.xlsx)
+                        下載正式成績報表 (.xlsx)
                     </button>
-                    
-                    <button type="button" id="copy-btn" onclick="downloadCopyList()" class="flex-1 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 py-4 rounded-xl font-bold transition-all opacity-50 cursor-not-allowed" disabled title="依學號排序，0分會留白">
-                        生成補習班貼上表
+                    <button type="button" id="copy-btn" onclick="downloadCopyList()" class="flex-1 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 py-4 rounded-xl font-bold transition-all opacity-50 cursor-not-allowed" disabled>
+                        生成 APP 貼上表
                     </button>
                 </div>
             </form>
@@ -373,26 +376,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     <h2 id="sum-bpp" class="text-3xl font-black mt-1">--</h2>
                 </div>
             </div>
-
-            <div class="glass-card rounded-xl p-5 flex flex-wrap gap-6 justify-between items-center text-xs font-bold text-slate-400">
-                <div class="flex gap-8">
-                    <div class="flex flex-col">
-                        <span class="text-[8px] text-slate-500">選擇平均 (題數)</span>
-                        <span id="sum-sel" class="text-slate-200">--</span>
-                    </div>
-                    <div class="flex flex-col">
-                        <span class="text-[8px] text-slate-500">非選平均 (分數)</span>
-                        <span id="sum-nonsel" class="text-slate-200">--</span>
-                    </div>
-                    <div class="flex flex-col">
-                        <span class="text-[8px] text-slate-500">總分平均</span>
-                        <span id="sum-total" class="text-slate-200">--</span>
-                    </div>
-                </div>
-                <div class="bg-slate-950/50 px-4 py-2 rounded-lg border border-slate-800">
-                    共 <span id="sum-count" class="text-indigo-400">--</span> 位學生
-                </div>
-            </div>
         </div>
     </div>
 
@@ -403,19 +386,15 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         dropzone.onclick = () => fileInput.click();
 
-        // 處理讀卡機上傳
         fileInput.onchange = async () => {
             const file = fileInput.files[0];
             if (!file) return;
-
             const formData = new FormData();
             formData.append('file', file);
-
             try {
                 const res = await fetch('/upload_read', { method: 'POST', body: formData });
                 const d = await res.json();
                 if (d.students && d.students.length > 0) {
-                    // 合併新舊資料，以姓名為基準避免重複
                     d.students.forEach(newSt => {
                         if(!studentsData.some(s => s.name === newSt.name)) {
                             studentsData.push({ name: newSt.name, x: newSt.x, y: 0 });
@@ -426,83 +405,69 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             } catch (e) { console.error(e); }
         };
 
-        // 手動新增學生邏輯
         function addManualStudent() {
             const nameInp = document.getElementById('manual-name');
             const xInp = document.getElementById('manual-x');
             const name = nameInp.value.trim();
             const x = parseFloat(xInp.value) || 0;
-
-            if (!name) { alert("請輸入學生姓名"); return; }
-            
-            if (studentsData.some(s => s.name === name)) {
-                if(!confirm("名單中已有此學生，是否要重複新增？")) return;
-            }
-
+            if (!name) return;
             studentsData.push({ name: name, x: x, y: 0 });
-            
-            // 清空輸入
-            nameInp.value = '';
-            xInp.value = '';
-            
+            nameInp.value = ''; xInp.value = '';
             refreshUI();
         }
 
-        // 移除學生
         function removeStudent(index) {
             studentsData.splice(index, 1);
             refreshUI();
         }
 
         function refreshUI() {
-            if (studentsData.length > 0) {
+            const hasData = studentsData.length > 0;
+            const submitBtn = document.getElementById('submit-btn');
+            const copyBtn = document.getElementById('copy-btn');
+            
+            if (hasData) {
                 document.getElementById('st-count').innerText = studentsData.length;
                 document.getElementById('success-bar').classList.remove('hidden');
-                
-                const submitBtn = document.getElementById('submit-btn');
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                
+                [submitBtn, copyBtn].forEach(btn => {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                });
                 renderStudentsInputs();
                 updateDashboard();
             } else {
                 document.getElementById('success-bar').classList.add('hidden');
-                document.getElementById('students-scores-container').classList.add('hidden');
-                document.getElementById('submit-btn').disabled = true;
+                [submitBtn, copyBtn].forEach(btn => {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                });
             }
         }
 
         function renderStudentsInputs() {
             const listDiv = document.getElementById('students-list');
             listDiv.innerHTML = '';
-            
             studentsData.forEach((s, idx) => {
                 const row = document.createElement('div');
                 row.className = "flex items-center justify-between bg-slate-950/40 border border-slate-800/80 px-4 py-2 rounded-lg gap-4";
                 row.innerHTML = `
                     <div class="flex-1 flex items-center justify-between">
                         <span class="text-sm font-semibold text-slate-200">${s.name}</span>
-                        <span class="text-[10px] text-slate-500">選擇: <b class="text-indigo-300">${s.x}</b> 題</span>
+                        <span class="text-[10px] text-slate-500">選擇: <b class="text-indigo-300">${s.x}</b></span>
                     </div>
                     <div class="flex items-center gap-3">
-                        <div class="flex items-center gap-1">
-                            <label class="text-[9px] font-bold text-slate-500 uppercase">手寫 Y</label>
-                            <input type="number" min="0" max="6" step="0.5" value="${s.y}" data-idx="${idx}" class="student-y-input w-12 bg-slate-950 border border-slate-700 rounded p-1 text-center text-xs font-bold text-emerald-400 outline-none focus:border-indigo-500">
-                        </div>
+                        <input type="number" min="0" max="6" step="0.5" value="${s.y}" data-idx="${idx}" class="student-y-input w-12 bg-slate-950 border border-slate-700 rounded p-1 text-center text-xs font-bold text-emerald-400 outline-none">
                         <button type="button" onclick="removeStudent(${idx})" class="text-slate-600 hover:text-red-500 transition-colors text-lg">×</button>
                     </div>
                 `;
                 listDiv.appendChild(row);
             });
-
             document.getElementById('students-scores-container').classList.remove('hidden');
-
             document.querySelectorAll('.student-y-input').forEach(input => {
                 input.addEventListener('input', (e) => {
                     const idx = e.target.getAttribute('data-idx');
                     let val = parseFloat(e.target.value) || 0;
-                    if (val < 0) val = 0;
-                    if (val > 6) val = 6;
+                    if (val < 0) val = 0; if (val > 6) val = 6;
                     studentsData[idx].y = val;
                     updateDashboard();
                 });
@@ -511,7 +476,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         async function updateDashboard() {
             if (studentsData.length === 0) return;
-
             const payload = {
                 students: studentsData,
                 th_app: parseFloat(document.getElementById('th_app').value) || 0,
@@ -519,7 +483,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 th_a: parseFloat(document.getElementById('th_a').value) || 0,
                 th_bpp: parseFloat(document.getElementById('th_bpp').value) || 0
             };
-
             try {
                 const res = await fetch('/analyze_full', {
                     method: 'POST',
@@ -527,62 +490,28 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     body: JSON.stringify(payload)
                 });
                 const d = await res.json();
-
                 document.getElementById('sum-app').innerText = d.counts["A++"];
                 document.getElementById('sum-ap').innerText = d.counts["A+"];
                 document.getElementById('sum-a').innerText = d.counts["A"];
                 document.getElementById('sum-bpp').innerText = d.counts["B++"];
-                document.getElementById('sum-sel').innerText = d.avg_sel;
-                document.getElementById('sum-nonsel').innerText = d.avg_nonsel;
-                document.getElementById('sum-total').innerText = d.avg_total;
-                document.getElementById('sum-count').innerText = d.count;
-
                 document.getElementById('students-json').value = JSON.stringify(studentsData);
             } catch (e) { console.error(e); }
         }
 
-        document.querySelectorAll('.th-input').forEach(i => i.onchange = updateDashboard);
-        // 這個函數負責切換後端路徑，下載完後會自動切換回來
-function downloadCopyList() {
-    const form = document.getElementById('main-form');
-    const originalAction = form.action;
-    
-    // 暫時將表單發送到補習班專用的後端路由
-    form.action = '/generate_copy_list';
-    form.submit();
-    
-    // 延遲一下下就改回原本的路徑，避免影響到一般的下載
-    setTimeout(() => { 
-        form.action = originalAction; 
-    }, 500);
-}
+        function downloadCopyList() {
+            const names = document.getElementById('ordered_names').value.trim();
+            if (!names) {
+                alert("請先在中間的文字框貼入 APP 名單順序！");
+                return;
+            }
+            const form = document.getElementById('main-form');
+            const originalAction = form.action;
+            form.action = '/generate_copy_list';
+            form.submit();
+            setTimeout(() => { form.action = originalAction; }, 500);
+        }
 
-// 另外，請確保你的 refreshUI 函數有更新，讓兩個按鈕一起變亮
-function refreshUI() {
-    const hasData = studentsData.length > 0;
-    const submitBtn = document.getElementById('submit-btn');
-    const copyBtn = document.getElementById('copy-btn');
-    
-    if (hasData) {
-        document.getElementById('st-count').innerText = studentsData.length;
-        document.getElementById('success-bar').classList.remove('hidden');
-        
-        // 啟動兩個按鈕
-        [submitBtn, copyBtn].forEach(btn => {
-            btn.disabled = false;
-            btn.classList.remove('opacity-50', 'cursor-not-allowed');
-        });
-        
-        renderStudentsInputs();
-        updateDashboard();
-    } else {
-        document.getElementById('success-bar').classList.add('hidden');
-        [submitBtn, copyBtn].forEach(btn => {
-            btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
-        });
-    }
-}
+        document.querySelectorAll('.th-input').forEach(i => i.onchange = updateDashboard);
     </script>
 </body>
 </html>'''
@@ -594,8 +523,7 @@ def index():
 @app.route('/upload_read', methods=['POST'])
 def upload_read():
     file = request.files.get('file')
-    if not file:
-        return jsonify({"students": []})
+    if not file: return jsonify({"students": []})
     students = read_students_initial(io.BytesIO(file.read()))
     return jsonify({"students": students})
 
@@ -603,58 +531,26 @@ def upload_read():
 def analyze_full():
     data = request.get_json() or {}
     students = data.get('students', [])
-    ths = {
-        'th_app': float(data.get('th_app', 93.2)),
-        'th_ap': float(data.get('th_ap', 85.7)),
-        'th_a': float(data.get('th_a', 76.2)),
-        'th_bpp': float(data.get('th_bpp', 67.1))
-    }
+    ths = {k: float(data.get(k, 0)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
     n = len(students)
-    if n == 0: 
-        return jsonify({"count":0, "avg_sel":0, "avg_nonsel":0, "avg_total":0, "counts":{"A++":0,"A+":0,"A":0,"B++":0}})
-
+    if n == 0: return jsonify({"counts":{"A++":0,"A+":0,"A":0,"B++":0}})
     counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
-    sum_sel = 0
-    sum_nonsel = 0
-    sum_total = 0
-
     for s in students:
-        x = float(s.get('x', 0))
-        y = float(s.get('y', 0))
+        x, y = float(s.get('x', 0)), float(s.get('y', 0))
         total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
-
-        sum_sel += x
-        sum_nonsel += y
-        sum_total += total
-
         if total >= ths['th_app']: counts["A++"] += 1
         elif total >= ths['th_ap']: counts["A+"] += 1
         elif total >= ths['th_a']: counts["A"] += 1
         elif total >= ths['th_bpp']: counts["B++"] += 1
-
-    return jsonify({
-        "count": n,
-        "avg_sel": round(sum_sel / n, 2),
-        "avg_nonsel": round(sum_nonsel / n, 2),
-        "avg_total": round(sum_total / n, 2),
-        "counts": counts
-    })
+    return jsonify({"counts": counts})
 
 @app.route('/generate', methods=['POST'])
 def generate():
     exam_name = request.form.get('exam_name', '成績報表')
     ths = {k: float(request.form.get(k, 0)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
-    
-    students_json = request.form.get('students_json', '[]')
-    students = json.loads(students_json)
-    
-    # 標題處理邏輯
+    students = json.loads(request.form.get('students_json', '[]'))
     parts = exam_name.strip().split()
-    if len(parts) >= 3:
-        lines = [parts[0], " ".join(parts[1:-1]), parts[-1]]
-    else:
-        lines = ["", exam_name, ""]
-    
+    lines = [parts[0], " ".join(parts[1:-1]), parts[-1]] if len(parts) >= 3 else ["", exam_name, ""]
     buf = build_excel(students, lines, ths)
     return send_file(buf, as_attachment=True, download_name=f"{exam_name}.xlsx")
 
