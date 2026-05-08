@@ -43,7 +43,7 @@ def sc(ws, row, col, value, bold=False, size=10, fill=None, border=None):
     return cell
 
 # ---------------------------------------------------------
-# 1. 更新讀取邏輯
+# 1. 讀取邏輯：抓取 P 欄 (Index 15)
 # ---------------------------------------------------------
 def read_students_initial(file_stream):
     try:
@@ -51,15 +51,16 @@ def read_students_initial(file_stream):
         ws = wb.active
         students = []
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) < 15: continue
+            if not row or len(row) < 16: continue
             
-            name = str(row[14]).strip() if row[14] is not None else ""
-            student_id = str(row[4]).strip() if row[4] is not None else "" 
+            name = str(row[14]).strip() if row[14] is not None else "" # O 欄姓名
+            student_id = str(row[4]).strip() if row[4] is not None else "" # E 欄學號
             
             if name in ["", "預設標準答案", "None"]: continue
                 
             try:
-                x_val = float(row[7]) if row[7] is not None else 0.0
+                # 關鍵修改：抓取 P 欄 (Index 15)
+                x_val = float(row[15]) if row[15] is not None else 0.0
                 students.append({
                     "id": student_id, 
                     "name": name, 
@@ -72,47 +73,37 @@ def read_students_initial(file_stream):
         return []
 
 # ---------------------------------------------------------
-# 2. 修改：依據貼上的名單順序生成檔案
+# 2. 生成 APP 專用貼上表 (依據貼入的名單順序)
 # ---------------------------------------------------------
 @app.route('/generate_copy_list', methods=['POST'])
 def generate_copy_list():
     students_json = request.form.get('students_json', '[]')
-    # 獲取使用者貼入的 App 順序名單
     ordered_names_raw = request.form.get('ordered_names', '')
     
     students = json.loads(students_json)
-    # 建立一個以姓名為 Key 的字典，方便快速查詢
     student_map = {s['name']: s for s in students}
-    
-    # 解析名單：依換行符切割，並過濾掉空白行
     ordered_names = [n.strip() for n in ordered_names_raw.split('\n') if n.strip()]
     
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "補習班貼上專用"
     
-    # 標題列
     ws.cell(row=1, column=1, value="APP名單順序")
     ws.cell(row=1, column=2, value="總分 (表現)")
     
-    # 依照貼入的名單順序填寫
     for i, target_name in enumerate(ordered_names, start=2):
         ws.cell(row=i, column=1, value=target_name)
-        
-        # 尋找該學生是否有成績資料
         if target_name in student_map:
             s = student_map[target_name]
             x = float(s.get('x', 0))
             y = float(s.get('y', 0))
+            # 計算總分邏輯
             total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
-            
-            # 若總分為 0，則留白 (符合使用者需求)
             if total == 0:
                 ws.cell(row=i, column=2, value="")
             else:
                 ws.cell(row=i, column=2, value=round(total, 2))
         else:
-            # 沒在資料庫裡 (請假或無成績)，成績欄位留白
             ws.cell(row=i, column=2, value="")
             
     buf = io.BytesIO()
@@ -215,23 +206,16 @@ def build_excel(students_data, exam_lines, ths):
     return buf
 
 # ════════════════════════════════
-# UI 模板 (新增名單貼入框)
+# UI 模板
 # ════════════════════════════════
-
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S R G</title>
+    <title>S R G - Score Report</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root {
-            --mesh-color-1: #1e1b4b;
-            --mesh-color-2: #312e81;
-            --mesh-color-3: #1e293b;
-            --mesh-color-4: #020617;
-        }
         body {
             background-color: #020617;
             background-image: 
@@ -240,113 +224,93 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 radial-gradient(at 50% 100%, #0f172a 0, transparent 50%);
             background-attachment: fixed;
             min-height: 100vh;
-            margin: 0;
-            font-family: 'Inter', sans-serif;
             color: #f8fafc;
+            font-family: system-ui, -apple-system, sans-serif;
         }
         .glass-card {
             background: rgba(15, 23, 42, 0.6);
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
         .btn-main {
             background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .btn-main:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); }
-        .stat-card {
-            background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        input::-webkit-outer-spin-button,
-        input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        input[type=number] {
-            -moz-appearance: textfield;
         }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
     </style>
 </head>
 <body class="p-4 md:p-12 flex justify-center">
     <div class="max-w-4xl w-full space-y-8">
-        <header class="text-center space-y-2">
+        <header class="text-center">
             <h1 class="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                 SCORE REPORT GENERATOR
             </h1>
         </header>
 
-        <div class="glass-card rounded-2xl p-8 space-y-6">
+        <div class="glass-card rounded-2xl p-8 space-y-6 shadow-2xl">
             <form id="main-form" action="/generate" method="post" class="space-y-6">
                 <input type="hidden" id="students-json" name="students_json" value="">
                 
                 <div>
                     <label class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-2 block">考試名稱</label>
-                    <input type="text" name="exam_name" placeholder="例如：113學年度 第一次 模擬考" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    <input type="text" name="exam_name" placeholder="例如：113學年度 第一次 模擬考" class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
 
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="space-y-1">
+                    <div class="space-y-1 text-center">
                         <label class="text-[10px] text-slate-500 font-bold">A++ 門檻</label>
-                        <input type="number" step="0.1" id="th_app" name="th_app" value="93.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
+                        <input type="number" step="0.1" id="th_app" name="th_app" value="93.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center text-indigo-400">
                     </div>
-                    <div class="space-y-1">
+                    <div class="space-y-1 text-center">
                         <label class="text-[10px] text-slate-500 font-bold">A+ 門檻</label>
-                        <input type="number" step="0.1" id="th_ap" name="th_ap" value="85.7" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
+                        <input type="number" step="0.1" id="th_ap" name="th_ap" value="85.7" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center text-emerald-400">
                     </div>
-                    <div class="space-y-1">
+                    <div class="space-y-1 text-center">
                         <label class="text-[10px] text-slate-500 font-bold">A 門檻</label>
-                        <input type="number" step="0.1" id="th_a" name="th_a" value="76.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
+                        <input type="number" step="0.1" id="th_a" name="th_a" value="76.2" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center text-amber-400">
                     </div>
-                    <div class="space-y-1">
+                    <div class="space-y-1 text-center">
                         <label class="text-[10px] text-slate-500 font-bold">B++ 門檻</label>
-                        <input type="number" step="0.1" id="th_bpp" name="th_bpp" value="67.1" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center">
+                        <input type="number" step="0.1" id="th_bpp" name="th_bpp" value="67.1" class="th-input w-full bg-slate-950/50 border border-slate-800 rounded-lg p-2 text-center text-pink-400">
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div id="dropzone" class="border-2 border-dashed border-slate-800 rounded-xl p-8 text-center hover:border-indigo-500 transition-colors cursor-pointer group">
+                    <div id="dropzone" class="border-2 border-dashed border-slate-800 rounded-xl p-8 text-center hover:border-indigo-500 transition-colors cursor-pointer">
                         <input type="file" id="file-input" accept=".xlsx, .xlsm" class="hidden">
-                        <div id="upload-content">
-                            <div class="text-2xl mb-1 group-hover:scale-110 transition-transform">📁</div>
-                            <p class="text-xs text-slate-500" id="file-status">讀卡機 XLSX 或 XLSM 檔案</p>
-                        </div>
+                        <div class="text-2xl mb-1">📁</div>
+                        <p class="text-xs text-slate-500">點擊或拖放 讀卡機 XLSX</p>
                     </div>
 
                     <div class="border border-slate-800 rounded-xl p-4 bg-slate-900/30 space-y-3">
-                        <p class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">手動新增名單</p>
+                        <p class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">手動新增</p>
                         <div class="flex gap-2">
-                            <input type="text" id="manual-name" placeholder="姓名" class="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm outline-none focus:border-indigo-500">
-                            <input type="number" id="manual-x" placeholder="選擇" class="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm text-center outline-none focus:border-indigo-500">
-                            <button type="button" onclick="addManualStudent()" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded text-xs font-bold transition-colors">新增</button>
+                            <input type="text" id="manual-name" placeholder="姓名" class="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm outline-none">
+                            <input type="number" id="manual-x" placeholder="選擇" class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm text-center">
+                            <button type="button" onclick="addManualStudent()" class="bg-indigo-600 px-3 py-1 rounded text-xs font-bold">新增</button>
                         </div>
                     </div>
                 </div>
 
+                <!-- 名單順序貼上區 -->
                 <div class="space-y-2">
                     <label class="text-[10px] uppercase tracking-[0.2em] text-indigo-400 font-bold block">1. 貼入補習班 APP 名單順序 (每人一行)</label>
-                    <textarea id="ordered_names" name="ordered_names" rows="5" placeholder="請直接貼入補習班系統的名單，這將決定「貼上表」的順序..." class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all custom-scrollbar"></textarea>
+                    <textarea id="ordered_names" name="ordered_names" rows="5" placeholder="請直接貼入補習班系統的名單順序，這將決定「貼上表」的順序..." class="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all custom-scrollbar"></textarea>
                 </div>
 
                 <div id="success-bar" class="hidden bg-indigo-500/10 border border-indigo-500/20 py-3 px-4 rounded-lg flex items-center justify-between">
-                    <span class="text-xs text-indigo-300 font-medium">✨ 目前載入：<span id="st-count">0</span> 位成員</span>
-                    <span class="text-[10px] px-2 py-0.5 bg-indigo-500/20 rounded-full text-indigo-400">READY</span>
+                    <span class="text-xs text-indigo-300 font-medium">✨ 載入成功：<span id="st-count">0</span> 位學員</span>
+                    <span class="text-[10px] px-2 py-0.5 bg-indigo-500/20 rounded-full text-indigo-400 font-bold">READY</span>
                 </div>
 
                 <div id="students-scores-container" class="hidden space-y-4">
                     <div class="flex justify-between items-center border-b border-slate-800 pb-2">
                         <h3 class="text-sm font-bold text-indigo-400">2. 登錄非選分數 (滿分 6)</h3>
-                        <span class="text-[10px] text-slate-500">總分 = (X/25)*85 + (Y/6)*15</span>
                     </div>
-                    <div id="students-list" class="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-                        </div>
+                    <div id="students-list" class="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar"></div>
                 </div>
 
-                <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex flex-col md:flex-row gap-4 pt-4">
                     <button type="submit" id="submit-btn" class="btn-main flex-[2] py-4 rounded-xl font-bold text-white shadow-xl opacity-50 cursor-not-allowed" disabled>
                         下載正式成績報表 (.xlsx)
                     </button>
@@ -357,24 +321,22 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </form>
         </div>
 
-        <div class="space-y-4">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-[10px] text-indigo-400 font-bold uppercase">A++</p>
-                    <h2 id="sum-app" class="text-3xl font-black mt-1">--</h2>
-                </div>
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-[10px] text-emerald-400 font-bold uppercase">A+</p>
-                    <h2 id="sum-ap" class="text-3xl font-black mt-1">--</h2>
-                </div>
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-[10px] text-amber-400 font-bold uppercase">A</p>
-                    <h2 id="sum-a" class="text-3xl font-black mt-1">--</h2>
-                </div>
-                <div class="stat-card rounded-2xl p-6 text-center">
-                    <p class="text-[10px] text-pink-400 font-bold uppercase">B++</p>
-                    <h2 id="sum-bpp" class="text-3xl font-black mt-1">--</h2>
-                </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="glass-card rounded-2xl p-6 text-center shadow-lg">
+                <p class="text-[10px] text-indigo-400 font-bold">A++</p>
+                <h2 id="sum-app" class="text-3xl font-black">--</h2>
+            </div>
+            <div class="glass-card rounded-2xl p-6 text-center shadow-lg">
+                <p class="text-[10px] text-emerald-400 font-bold">A+</p>
+                <h2 id="sum-ap" class="text-3xl font-black">--</h2>
+            </div>
+            <div class="glass-card rounded-2xl p-6 text-center shadow-lg">
+                <p class="text-[10px] text-amber-400 font-bold">A</p>
+                <h2 id="sum-a" class="text-3xl font-black">--</h2>
+            </div>
+            <div class="glass-card rounded-2xl p-6 text-center shadow-lg">
+                <p class="text-[10px] text-pink-400 font-bold">B++</p>
+                <h2 id="sum-bpp" class="text-3xl font-black">--</h2>
             </div>
         </div>
     </div>
@@ -457,7 +419,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     </div>
                     <div class="flex items-center gap-3">
                         <input type="number" min="0" max="6" step="0.5" value="${s.y}" data-idx="${idx}" class="student-y-input w-12 bg-slate-950 border border-slate-700 rounded p-1 text-center text-xs font-bold text-emerald-400 outline-none">
-                        <button type="button" onclick="removeStudent(${idx})" class="text-slate-600 hover:text-red-500 transition-colors text-lg">×</button>
+                        <button type="button" onclick="removeStudent(${idx})" class="text-slate-600 hover:text-red-500 text-lg">×</button>
                     </div>
                 `;
                 listDiv.appendChild(row);
