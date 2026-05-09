@@ -405,4 +405,89 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 document.getElementById('sum-app').innerText = d.counts["A++"];
                 document.getElementById('sum-ap').innerText = d.counts["A+"];
                 document.getElementById('sum-a').innerText = d.counts["A"];
-                document.getElementById('sum-bpp').innerText = d.
+                document.getElementById('sum-bpp').innerText = d.counts["B++"];
+                document.getElementById('students-json').value = JSON.stringify(studentsData);
+            } catch (e) { console.error(e); }
+        }
+
+        function downloadCopyList() {
+            const names = document.getElementById('ordered_names').value.trim();
+            if (!names) { alert("請先貼入 APP 名單順序！"); return; }
+            const form = document.getElementById('main-form');
+            const originalAction = form.action;
+            form.action = '/generate_copy_list'; form.submit();
+            setTimeout(() => { form.action = originalAction; }, 500);
+        }
+        document.querySelectorAll('.th-input').forEach(i => i.onchange = updateDashboard);
+    </script>
+</body>
+</html>'''
+
+@app.route('/')
+def index(): return render_template_string(HTML_TEMPLATE)
+
+@app.route('/upload_read', methods=['POST'])
+def upload_read():
+    file = request.files.get('file')
+    if not file: return jsonify({"students": []})
+    return jsonify({"students": read_students_initial(io.BytesIO(file.read()))})
+
+@app.route('/analyze_full', methods=['POST'])
+def analyze_full():
+    data = request.get_json() or {}
+    students = data.get('students', [])
+    ths = {k: float(data.get(k, 0)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
+    counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
+    for s in students:
+        # 請假學生不計入統計
+        if s.get('is_leave', False): continue
+        total = (float(s.get('x', 0)) / 25.0) * 85.0 + (float(s.get('y', 0)) / 6.0) * 15.0
+        if total >= ths['th_app']: counts["A++"] += 1
+        elif total >= ths['th_ap']: counts["A+"] += 1
+        elif total >= ths['th_a']: counts["A"] += 1
+        elif total >= ths['th_bpp']: counts["B++"] += 1
+    return jsonify({"counts": counts})
+
+@app.route('/generate', methods=['POST'])
+def generate():
+    exam_name = request.form.get('exam_name', '成績報表')
+    ths = {k: float(request.form.get(k, 0)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
+    students = json.loads(request.form.get('students_json', '[]'))
+    parts = exam_name.strip().split()
+    lines = [parts[0], " ".join(parts[1:-1]), parts[-1]] if len(parts) >= 3 else ["", exam_name, ""]
+    return send_file(build_excel(students, lines, ths), as_attachment=True, download_name=f"{exam_name}.xlsx")
+
+@app.route('/generate_copy_list', methods=['POST'])
+def generate_copy_list():
+    students_json = request.form.get('students_json', '[]')
+    ordered_names_raw = request.form.get('ordered_names', '')
+    students = json.loads(students_json)
+    student_map = {s['name']: s for s in students}
+    ordered_names = [n.strip() for n in ordered_names_raw.split('\n') if n.strip()]
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "補習班貼上專用"
+    ws.cell(row=1, column=1, value="APP名單順序")
+    ws.cell(row=1, column=2, value="總分 (表現)")
+    
+    for i, target_name in enumerate(ordered_names, start=2):
+        ws.cell(row=i, column=1, value=target_name)
+        if target_name in student_map:
+            s = student_map[target_name]
+            if s.get('is_leave', False):
+                ws.cell(row=i, column=2, value="假")
+            else:
+                x, y = float(s.get('x', 0)), float(s.get('y', 0))
+                total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
+                ws.cell(row=i, column=2, value=round(total, 2) if total > 0 else "")
+        else:
+            ws.cell(row=i, column=2, value="")
+            
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name="App_Score_Import.xlsx")
+
+if __name__ == "__main__":
+    app.run(debug=True)
