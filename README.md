@@ -1,1 +1,1 @@
-# score-report-generator-v1.1
+# score-report-generator-1.1
