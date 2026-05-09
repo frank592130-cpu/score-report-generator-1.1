@@ -49,12 +49,16 @@ def read_students_initial(file_stream):
         ws = wb.active
         students = []
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) < 16: continue
-            name = str(row[14]).strip() if row[14] is not None else "" 
+            # 因為 J 欄是第 10 欄，確保讀取至少有 10 欄的資料
+            if not row or len(row) < 10: continue
+            
+            # 姓名改為讀取 F 欄 (索引 5)
+            name = str(row[5]).strip() if row[5] is not None else "" 
             student_id = str(row[4]).strip() if row[4] is not None else "" 
             if name in ["", "預設標準答案", "None"]: continue
             try:
-                x_val = float(row[15]) if row[15] is not None else 0.0
+                # 選擇(總分)改為讀取 J 欄 (索引 9)
+                x_val = float(row[9]) if row[9] is not None else 0.0
                 students.append({"id": student_id, "name": name, "x": x_val, "y": 0})
             except (ValueError, TypeError): continue
         return students
@@ -273,7 +277,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     });
                     refreshUI();
                 } else {
-                    alert("檔案讀取失敗或格式不正確（請確保學生姓名在第 O 欄，選擇分數在第 P 欄）");
+                    // 這裡的提示訊息已為你更新
+                    alert("檔案讀取失敗或格式不正確（請確保學生姓名在第 F 欄，選擇分數在第 J 欄）");
                 }
             } catch (e) { console.error(e); }
         };
