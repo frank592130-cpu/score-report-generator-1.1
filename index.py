@@ -5,6 +5,7 @@ import json
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from flask import Flask, request, send_file, render_template_string, jsonify, Response
 
 app = Flask(__name__)
 
@@ -464,8 +465,12 @@ def generate():
     students = json.loads(request.form.get('students_json', '[]'))
     parts = exam_name.strip().split()
     lines = [parts[0], " ".join(parts[1:-1]), parts[-1]] if len(parts) >= 3 else ["", exam_name, ""]
-    return send_file(build_excel(students, lines, ths), as_attachment=True, download_name=f"{exam_name}.xlsx")
-
+    buf = build_excel(students, lines, ths)
+    return Response(
+        buf.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{exam_name}.xlsx"'}
+    )
 @app.route('/generate_copy_list', methods=['POST'])
 def generate_copy_list():
     students_json = request.form.get('students_json', '[]')
@@ -492,11 +497,14 @@ def generate_copy_list():
                 ws.cell(row=i, column=2, value=round(total, 2) if total > 0 else "")
         else:
             ws.cell(row=i, column=2, value="")
-            
+    
     buf = io.BytesIO()
     wb.save(buf)
-    buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name="App_Score_Import.xlsx")
+    return Response(
+        buf.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename="App_Score_Import.xlsx"'}
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)
