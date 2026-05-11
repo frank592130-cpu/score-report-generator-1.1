@@ -39,6 +39,8 @@ FILLS = {
     "B++": PatternFill("solid", fgColor="808080"),
     "": PatternFill("solid", fgColor="808080"),
 }
+
+# 修改後的欄位寬度設定
 REPORT_COLUMN_WIDTHS = {
     "A": 7.25,
     "E": 7.25,
@@ -292,6 +294,7 @@ def build_excel(students_data, exam_lines, ths):
         else:
             avg_vals = ["平均", 0, 0, 0]
 
+        # 修改後：將平均值區域的字體大小設為 16
         for offset, value in enumerate(avg_vals):
             curr_col = avg_col_base + offset
             for fill_row in range(avg_start_row, final_row + 1):
