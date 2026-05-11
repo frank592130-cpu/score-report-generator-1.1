@@ -22,6 +22,7 @@ FILLS = {
 
 def _med(): return Side(style="medium", color="000000")
 def _thn(): return Side(style="thin",   color="000000")
+
 def all_thin():
     s = _thn()
     return Border(left=s, right=s, top=s, bottom=s)
@@ -69,6 +70,7 @@ def build_excel(students_data, exam_lines, ths):
             leave_list.append({'name': s.get('name', ''), 'is_leave': True})
         else:
             x, y = float(s.get('x', 0)), float(s.get('y', 0))
+            # 權重公式：(選擇/25)*85 + (非選/6)*15
             total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
             normal_list.append({'name': s.get('name', ''), 'x': x, 'y': y, 'total': round(total, 2), 'is_leave': False})
     
@@ -91,18 +93,28 @@ def build_excel(students_data, exam_lines, ths):
     wb = openpyxl.Workbook()
     ws = wb.active
     
-    for b in range(3):
-        base = b * 4 + 1
-        for offset, w in enumerate([9, 7.5, 7.5, 7.5]):
-            ws.column_dimensions[get_column_letter(base + offset)].width = w
+    # ════════════════════════════════
+    # 修改：欄寬設定
+    # ════════════════════════════════
+    column_widths = {
+        'A': 7.25, 'E': 7.25, 'I': 7.25,
+        'B': 4.50, 'C': 4.50, 'F': 4.50, 'G': 4.50,
+        'D': 5.75, 'H': 5.75,
+        'J': 8.88, 'K': 8.88, 'L': 8.88
+    }
+    for col_let, w in column_widths.items():
+        ws.column_dimensions[col_let].width = w
+    
     ws.column_dimensions["M"].width = 0.4
     for col_let in ["N", "O", "P"]: ws.column_dimensions[col_let].width = 7
 
+    # 繪製標題列
     for b in range(3):
         base = b * 4 + 1
         for i, h in enumerate(["姓名", "選擇", "非選", "總分"]):
             sc(ws, HEADER_ROW, base + i, h, border=all_thin())
 
+    # 填入學生資料
     for idx, s in enumerate(final_students):
         b, r = idx // rows_per_block, DATA_START + (idx % rows_per_block)
         col = b * 4 + 1
@@ -122,28 +134,41 @@ def build_excel(students_data, exam_lines, ths):
             vals = [s['name'], s['x'], s['y'], total]
             for i, val in enumerate(vals): sc(ws, r, col + i, val, fill=f, border=all_thin())
 
+    # ════════════════════════════════
+    # 修改：平均值區塊 (字體 16)
+    # ════════════════════════════════
     if n_total > 0:
         avg_pos = n_total
         b_avg, r_avg_start = avg_pos // rows_per_block, DATA_START + (avg_pos % rows_per_block)
         col_avg_base = b_avg * 4 + 1
         if n_normal > 0:
-            avg_vals = ["平均", round(sum(s['x'] for s in sorted_normal)/n_normal, 2), round(sum(s['y'] for s in sorted_normal)/n_normal, 2), round(sum(s['total'] for s in sorted_normal)/n_normal, 2)]
+            avg_vals = ["平均", round(sum(s['x'] for s in sorted_normal)/n_normal, 2), 
+                        round(sum(s['y'] for s in sorted_normal)/n_normal, 2), 
+                        round(sum(s['total'] for s in sorted_normal)/n_normal, 2)]
         else:
             avg_vals = ["平均", 0, 0, 0]
+        
         for i, val in enumerate(avg_vals):
             curr_col = col_avg_base + i
-            for fill_r in range(r_avg_start, FINAL_ROW + 1): sc(ws, fill_r, curr_col, "", border=all_thin())
-            if FINAL_ROW > r_avg_start: ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=FINAL_ROW, end_column=curr_col)
-            sc(ws, r_avg_start, curr_col, val, bold=True, border=all_thin())
+            # 填充背景與框線
+            for fill_r in range(r_avg_start, FINAL_ROW + 1): 
+                sc(ws, fill_r, curr_col, "", border=all_thin())
+            # 合併儲存格並填入數據 (字體 size=16)
+            if FINAL_ROW > r_avg_start: 
+                ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=FINAL_ROW, end_column=curr_col)
+            sc(ws, r_avg_start, curr_col, val, bold=True, size=16, border=all_thin())
 
+    # 繪製標題方框
     TITLE_R1, TITLE_R2, TITLE_C1, TITLE_C2 = 2, 7, 14, 16
     ws.merge_cells(start_row=TITLE_R1, start_column=TITLE_C1, end_row=TITLE_R2, end_column=TITLE_C2)
     tc = ws.cell(row=TITLE_R1, column=TITLE_C1)
     tc.value = "\n".join(exam_lines)
     tc.font, tc.alignment = Font(name=FONT_NAME, bold=True, size=18), Alignment(horizontal="center", vertical="center", wrap_text=True)
     for r in range(TITLE_R1, TITLE_R2 + 1):
-        for c in range(TITLE_C1, TITLE_C2 + 1): ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
+        for c in range(TITLE_C1, TITLE_C2 + 1): 
+            ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
     
+    # 繪製等第統計表
     visible_grades = [("A++", counts["A++"]), ("A+", counts["A+"]), ("A", counts["A"]), ("B++", counts["B++"])]
     GRADE_R1 = TITLE_R2 + 4 
     for i, (g, cnt) in enumerate(visible_grades):
@@ -154,6 +179,7 @@ def build_excel(students_data, exam_lines, ths):
             cell.font, cell.alignment = Font(name=FONT_NAME, bold=True, size=11), Alignment(horizontal="center", vertical="center")
             cell.border = outer_med(row, col, GRADE_R1, 14, GRADE_R1 + 3, 15)
             if f: cell.fill = f
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -168,9 +194,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TIME SAVER</title>
-    
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
-    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -391,6 +415,7 @@ def generate():
     ths = {k: float(request.form.get(k, 0)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
     students = json.loads(request.form.get('students_json', '[]'))
     parts = exam_name.strip().split()
+    # 標題分行邏輯
     lines = [parts[0], " ".join(parts[1:-1]), parts[-1]] if len(parts) >= 3 else ["", exam_name, ""]
     return send_file(build_excel(students, lines, ths), as_attachment=True, download_name=f"{exam_name}.xlsx")
 
