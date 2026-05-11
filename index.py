@@ -54,7 +54,6 @@ def read_students_initial(file_stream):
             if name in ["", "預設標準答案", "None"]: continue
             try:
                 x_val = float(row[9]) if row[9] is not None else 0.0
-                # 預設非請假
                 students.append({"id": student_id, "name": name, "x": x_val, "y": 0, "is_leave": False})
             except (ValueError, TypeError): continue
         return students
@@ -63,26 +62,19 @@ def read_students_initial(file_stream):
         return []
 
 def build_excel(students_data, exam_lines, ths):
-    # 分離正常學生與請假學生
     normal_list = []
     leave_list = []
-    
     for s in students_data:
-        is_lv = s.get('is_leave', False)
-        if is_lv:
+        if s.get('is_leave', False):
             leave_list.append({'name': s.get('name', ''), 'is_leave': True})
         else:
             x, y = float(s.get('x', 0)), float(s.get('y', 0))
             total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
             normal_list.append({'name': s.get('name', ''), 'x': x, 'y': y, 'total': round(total, 2), 'is_leave': False})
     
-    # 正常學生按總分排序
     sorted_normal = sorted(normal_list, key=lambda x: -x['total'])
-    # 合併名單：正常在前，請假在後
     final_students = sorted_normal + leave_list
-    
-    n_total = len(final_students)
-    n_normal = len(sorted_normal)
+    n_total, n_normal = len(final_students), len(sorted_normal)
     
     counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
     for s in sorted_normal:
@@ -114,18 +106,12 @@ def build_excel(students_data, exam_lines, ths):
     for idx, s in enumerate(final_students):
         b, r = idx // rows_per_block, DATA_START + (idx % rows_per_block)
         col = b * 4 + 1
-        
         if s['is_leave']:
-            # 請假學生：姓名不填色，後三欄合併寫「假」且不填色
             sc(ws, r, col, s['name'], border=all_thin())
-            # 合併 選擇(col+1)、非選(col+2)、總分(col+3)
             ws.merge_cells(start_row=r, start_column=col+1, end_row=r, end_column=col+3)
             sc(ws, r, col+1, "假", border=all_thin())
-            # 確保被合併的格子也有邊框
-            for i in range(1, 4):
-                ws.cell(row=r, column=col+i).border = all_thin()
+            for i in range(1, 4): ws.cell(row=r, column=col+i).border = all_thin()
         else:
-            # 正常學生
             g = ""
             total = s['total']
             if total >= ths['th_app']: g = "A++"
@@ -134,42 +120,29 @@ def build_excel(students_data, exam_lines, ths):
             elif total >= ths['th_bpp']: g = "B++"
             f = FILLS.get(g)
             vals = [s['name'], s['x'], s['y'], total]
-            for i, val in enumerate(vals):
-                sc(ws, r, col + i, val, fill=f, border=all_thin())
+            for i, val in enumerate(vals): sc(ws, r, col + i, val, fill=f, border=all_thin())
 
-    # 平均值計算（僅限正常學生）
     if n_total > 0:
         avg_pos = n_total
         b_avg, r_avg_start = avg_pos // rows_per_block, DATA_START + (avg_pos % rows_per_block)
         col_avg_base = b_avg * 4 + 1
-        
         if n_normal > 0:
-            avg_vals = [
-                "平均", 
-                round(sum(s['x'] for s in sorted_normal)/n_normal, 2), 
-                round(sum(s['y'] for s in sorted_normal)/n_normal, 2), 
-                round(sum(s['total'] for s in sorted_normal)/n_normal, 2)
-            ]
+            avg_vals = ["平均", round(sum(s['x'] for s in sorted_normal)/n_normal, 2), round(sum(s['y'] for s in sorted_normal)/n_normal, 2), round(sum(s['total'] for s in sorted_normal)/n_normal, 2)]
         else:
             avg_vals = ["平均", 0, 0, 0]
-
         for i, val in enumerate(avg_vals):
             curr_col = col_avg_base + i
-            for fill_r in range(r_avg_start, FINAL_ROW + 1):
-                sc(ws, fill_r, curr_col, "", border=all_thin())
-            if FINAL_ROW > r_avg_start: 
-                ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=FINAL_ROW, end_column=curr_col)
+            for fill_r in range(r_avg_start, FINAL_ROW + 1): sc(ws, fill_r, curr_col, "", border=all_thin())
+            if FINAL_ROW > r_avg_start: ws.merge_cells(start_row=r_avg_start, start_column=curr_col, end_row=FINAL_ROW, end_column=curr_col)
             sc(ws, r_avg_start, curr_col, val, bold=True, border=all_thin())
 
-    # 標題與人數統計渲染 (保持不變)
     TITLE_R1, TITLE_R2, TITLE_C1, TITLE_C2 = 2, 7, 14, 16
     ws.merge_cells(start_row=TITLE_R1, start_column=TITLE_C1, end_row=TITLE_R2, end_column=TITLE_C2)
     tc = ws.cell(row=TITLE_R1, column=TITLE_C1)
     tc.value = "\n".join(exam_lines)
     tc.font, tc.alignment = Font(name=FONT_NAME, bold=True, size=18), Alignment(horizontal="center", vertical="center", wrap_text=True)
     for r in range(TITLE_R1, TITLE_R2 + 1):
-        for c in range(TITLE_C1, TITLE_C2 + 1):
-            ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
+        for c in range(TITLE_C1, TITLE_C2 + 1): ws.cell(row=r, column=c).border = outer_med(r, c, TITLE_R1, TITLE_C1, TITLE_R2, TITLE_C2)
     
     visible_grades = [("A++", counts["A++"]), ("A+", counts["A+"]), ("A", counts["A"]), ("B++", counts["B++"])]
     GRADE_R1 = TITLE_R2 + 4 
@@ -181,14 +154,13 @@ def build_excel(students_data, exam_lines, ths):
             cell.font, cell.alignment = Font(name=FONT_NAME, bold=True, size=11), Alignment(horizontal="center", vertical="center")
             cell.border = outer_med(row, col, GRADE_R1, 14, GRADE_R1 + 3, 15)
             if f: cell.fill = f
-            
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf
 
 # ════════════════════════════════
-# UI 模板
+# UI 模板 
 # ════════════════════════════════
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="zh-TW">
@@ -196,14 +168,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TIME SAVER</title>
-    <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TIME SAVER</title>
     
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏰</text></svg>">
-    
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -311,25 +277,15 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         }
                     });
                     refreshUI();
-                } else {
-                    alert("檔案讀取失敗或格式不正確（請確保學生姓名在第 F 欄，選擇分數在第 J 欄）");
-                }
+                } else { alert("檔案讀取失敗（確保學生姓名在第 F 欄，選擇分數在第 J 欄）"); }
             } catch (e) { console.error(e); }
         };
 
         function addManualStudent() {
-            const nameInp = document.getElementById('manual-name');
-            const xInp = document.getElementById('manual-x');
-            const leaveInp = document.getElementById('manual-leave');
-            
-            const name = nameInp.value.trim();
-            const x = parseFloat(xInp.value) || 0;
-            const is_leave = leaveInp.checked;
-            
+            const nameInp = document.getElementById('manual-name'), xInp = document.getElementById('manual-x'), leaveInp = document.getElementById('manual-leave');
+            const name = nameInp.value.trim(), x = parseFloat(xInp.value) || 0, is_leave = leaveInp.checked;
             if (!name) return;
             studentsData.push({ name, x, y: 0, is_leave });
-            
-            // 重置輸入
             nameInp.value = ''; xInp.value = ''; leaveInp.checked = false;
             refreshUI();
         }
@@ -338,8 +294,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         function refreshUI() {
             const hasData = studentsData.length > 0;
-            const submitBtn = document.getElementById('submit-btn');
-            const copyBtn = document.getElementById('copy-btn');
+            const submitBtn = document.getElementById('submit-btn'), copyBtn = document.getElementById('copy-btn');
             if (hasData) {
                 document.getElementById('st-count').innerText = studentsData.length;
                 document.getElementById('success-bar').classList.remove('hidden');
@@ -357,34 +312,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             studentsData.forEach((s, idx) => {
                 const row = document.createElement('div');
                 row.className = "flex items-center justify-between bg-slate-950/40 border border-slate-800/80 px-4 py-2 rounded-lg gap-4";
-                
-                let scoreSection = '';
-                if (s.is_leave) {
-                    scoreSection = `<span class="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">請假</span>`;
-                } else {
-                    scoreSection = `<span class="text-[10px] text-slate-500">選擇: <b class="text-indigo-300">${s.x}</b></span>`;
-                }
-
-                let inputSection = '';
-                if (!s.is_leave) {
-                    inputSection = `<input type="number" inputmode="decimal" min="0" max="6" step="0.5" value="${s.y}" data-idx="${idx}" class="student-y-input w-12 bg-slate-950 border border-slate-700 rounded p-1 text-center text-xs font-bold text-emerald-400 outline-none">`;
-                } else {
-                    inputSection = `<div class="w-12"></div>`;
-                }
-
-                row.innerHTML = `
-                    <div class="flex-1 flex items-center justify-between">
-                        <span class="text-sm font-semibold text-slate-200">${s.name}</span>
-                        ${scoreSection}
-                    </div>
-                    <div class="flex items-center gap-3">
-                        ${inputSection}
-                        <button type="button" onclick="removeStudent(${idx})" class="text-slate-600 hover:text-red-500 text-lg transition-colors">×</button>
-                    </div>`;
+                let scoreSection = s.is_leave ? `<span class="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded">請假</span>` : `<span class="text-[10px] text-slate-500">選擇: <b class="text-indigo-300">${s.x}</b></span>`;
+                let inputSection = !s.is_leave ? `<input type="number" inputmode="decimal" min="0" max="6" step="0.5" value="${s.y}" data-idx="${idx}" class="student-y-input w-12 bg-slate-950 border border-slate-700 rounded p-1 text-center text-xs font-bold text-emerald-400 outline-none">` : `<div class="w-12"></div>`;
+                row.innerHTML = `<div class="flex-1 flex items-center justify-between"><span class="text-sm font-semibold text-slate-200">${s.name}</span>${scoreSection}</div><div class="flex items-center gap-3">${inputSection}<button type="button" onclick="removeStudent(${idx})" class="text-slate-600 hover:text-red-500 text-lg transition-colors">×</button></div>`;
                 listDiv.appendChild(row);
             });
             document.getElementById('students-scores-container').classList.remove('hidden');
-            
             document.querySelectorAll('.student-y-input').forEach(input => {
                 input.addEventListener('input', (e) => {
                     const idx = e.target.getAttribute('data-idx');
@@ -405,11 +338,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 th_bpp: parseFloat(document.getElementById('th_bpp').value) || 0
             };
             try {
-                const res = await fetch('/analyze_full', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify(payload) 
-                });
+                const res = await fetch('/analyze_full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                 const d = await res.json();
                 document.getElementById('sum-app').innerText = d.counts["A++"];
                 document.getElementById('sum-ap').innerText = d.counts["A+"];
@@ -448,7 +377,6 @@ def analyze_full():
     ths = {k: float(data.get(k, 0)) for k in ['th_app', 'th_ap', 'th_a', 'th_bpp']}
     counts = {"A++": 0, "A+": 0, "A": 0, "B++": 0}
     for s in students:
-        # 請假學生不計入統計
         if s.get('is_leave', False): continue
         total = (float(s.get('x', 0)) / 25.0) * 85.0 + (float(s.get('y', 0)) / 6.0) * 15.0
         if total >= ths['th_app']: counts["A++"] += 1
@@ -473,26 +401,21 @@ def generate_copy_list():
     students = json.loads(students_json)
     student_map = {s['name']: s for s in students}
     ordered_names = [n.strip() for n in ordered_names_raw.split('\n') if n.strip()]
-    
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "補習班貼上專用"
     ws.cell(row=1, column=1, value="APP名單順序")
     ws.cell(row=1, column=2, value="總分 (表現)")
-    
     for i, target_name in enumerate(ordered_names, start=2):
         ws.cell(row=i, column=1, value=target_name)
         if target_name in student_map:
             s = student_map[target_name]
-            if s.get('is_leave', False):
-                ws.cell(row=i, column=2, value="假")
+            if s.get('is_leave', False): ws.cell(row=i, column=2, value="假")
             else:
                 x, y = float(s.get('x', 0)), float(s.get('y', 0))
                 total = (x / 25.0) * 85.0 + (y / 6.0) * 15.0
                 ws.cell(row=i, column=2, value=round(total, 2) if total > 0 else "")
-        else:
-            ws.cell(row=i, column=2, value="")
-            
+        else: ws.cell(row=i, column=2, value="")
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
