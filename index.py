@@ -100,17 +100,21 @@ def build_excel(students_data, exam_lines, ths):
     ws = wb.active
     
     BLOCK_WIDTHS = [
-            [7.25, 4.50, 4.50, 5.75],   # A B C D
-            [7.25, 4.50, 4.50, 5.75],   # E F G H
-            [7.25, 8.88, 8.88, 8.88],   # I J K L
-        ]
+        [7.25, 4.50, 4.50, 5.75],   # A B C D
+        [7.25, 4.50, 4.50, 5.75],   # E F G H
+        [7.25, 8.88, 8.88, 8.88],   # I J K L
+    ]
     for b in range(3):
         base = b * 4 + 1
         for offset, w in enumerate(BLOCK_WIDTHS[b]):
-            ws.column_dimensions[get_column_letter(base + offset)].width = w
+            col_letter = get_column_letter(base + offset)
+            ws.column_dimensions[col_letter].width = w
+            ws.column_dimensions[col_letter].customWidth = True   # ← 新增這行
     ws.column_dimensions["M"].width = 0.4
-    for col_let in ["N", "O", "P"]: ws.column_dimensions[col_let].width = 7
-
+    ws.column_dimensions["M"].customWidth = True
+    for col_let in ["N", "O", "P"]:
+        ws.column_dimensions[col_let].width = 7
+        ws.column_dimensions[col_let].customWidth = True
     for b in range(3):
         base = b * 4 + 1
         for i, h in enumerate(["姓名", "選擇", "非選", "總分"]):
