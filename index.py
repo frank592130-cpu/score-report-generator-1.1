@@ -39,6 +39,24 @@ FILLS = {
     "B++": PatternFill("solid", fgColor="808080"),
     "": PatternFill("solid", fgColor="808080"),
 }
+REPORT_COLUMN_WIDTHS = {
+    "A": 7.25,
+    "E": 7.25,
+    "I": 7.25,
+    "B": 4.50,
+    "C": 4.50,
+    "F": 4.50,
+    "G": 4.50,
+    "D": 5.75,
+    "H": 5.75,
+    "J": 8.88,
+    "K": 8.88,
+    "L": 8.88,
+    "M": 0.4,
+    "N": 7,
+    "O": 7,
+    "P": 7,
+}
 
 
 def _med():
@@ -72,6 +90,11 @@ def sc(ws, row, col, value, bold=False, size=10, fill=None, border=None):
     if fill:
         cell.fill = fill
     return cell
+
+
+def apply_report_column_widths(ws):
+    for col_letter, width in REPORT_COLUMN_WIDTHS.items():
+        ws.column_dimensions[col_letter].width = width
 
 
 def to_float(value, default=0.0):
@@ -230,25 +253,7 @@ def build_excel(students_data, exam_lines, ths):
     wb = openpyxl.Workbook()
     ws = wb.active
 
-    score_column_widths = {
-        "A": 7.25,
-        "E": 7.25,
-        "I": 7.25,
-        "B": 4.50,
-        "C": 4.50,
-        "F": 4.50,
-        "G": 4.50,
-        "D": 5.75,
-        "H": 5.75,
-        "J": 8.88,
-        "K": 8.88,
-        "L": 8.88,
-    }
-    for col_letter, width in score_column_widths.items():
-        ws.column_dimensions[col_letter].width = width
-    ws.column_dimensions["M"].width = 0.4
-    for col_letter in ["N", "O", "P"]:
-        ws.column_dimensions[col_letter].width = 7
+    apply_report_column_widths(ws)
 
     for block in range(3):
         base = block * 4 + 1
@@ -322,6 +327,7 @@ def build_excel(students_data, exam_lines, ths):
             if fill:
                 cell.fill = fill
 
+    apply_report_column_widths(ws)
     buf = io.BytesIO()
     wb.save(buf)
     wb.close()
